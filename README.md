@@ -26,7 +26,7 @@ Built in **Go**, backed by **PostgreSQL**, optimised for **Ubuntu/Debian Linux**
 ## Architecture
 
 ```
-PAPA9000/
+EVM-Wallet-GENERATOR-BOT/
 ├── cmd/            main.go              ← entry point
 ├── config/         config.go            ← .env loader
 ├── database/       db.go                ← connection pool
@@ -114,8 +114,8 @@ psql --version
 
 ```bash
 cd ~
-git clone https://github.com/vinayakkumar9000/PAPA9000.git
-cd PAPA9000
+git clone https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT.git
+cd EVM-Wallet-GENERATOR-BOT
 ```
 
 #### Step 6: Configure the Database
@@ -193,8 +193,8 @@ ssh your_username@YOUR_VPS_IP
 
 ```bash
 cd ~
-git clone https://github.com/vinayakkumar9000/PAPA9000.git
-cd PAPA9000
+git clone https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT.git
+cd EVM-Wallet-GENERATOR-BOT
 ```
 
 #### Step 3: Run the Automated Installer
@@ -229,7 +229,7 @@ sudo apt install -y tmux
 tmux new -s wallet
 
 # Run the application
-cd ~/PAPA9000
+cd ~/EVM-Wallet-GENERATOR-BOT
 ./evmwalletbot
 
 # Detach from tmux: Press Ctrl+B, then D
@@ -263,8 +263,8 @@ brew install postgresql@16
 brew services start postgresql@16
 
 # 4. Clone and setup
-git clone https://github.com/vinayakkumar9000/PAPA9000.git
-cd PAPA9000
+git clone https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT.git
+cd EVM-Wallet-GENERATOR-BOT
 cp .env.example .env
 
 # 5. Create database (macOS uses your username by default)
