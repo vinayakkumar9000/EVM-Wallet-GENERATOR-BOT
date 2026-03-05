@@ -14,3 +14,8 @@ vendor/
 .idea/
 .vscode/
 *.swp
+
+# ── Archive files ────────────────────────────────────────────────────────────
+*.zip
+*.tar.gz
+*.rar
