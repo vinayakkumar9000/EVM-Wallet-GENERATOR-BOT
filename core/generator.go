@@ -56,12 +56,17 @@ func newEventWorkerPool(pool *pgxpool.Pool, workers int) *eventWorkerPool {
 func (p *eventWorkerPool) start() {
 	for i := 0; i < p.workers; i++ {
 		p.wg.Add(1)
-		go func() {
+		go func(workerID int) {
 			defer p.wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Event worker %d panic recovered: %v", workerID, r)
+				}
+			}()
 			for job := range p.jobCh {
 				logCreationEvents(p.pool, job.ids, job.batchNum)
 			}
-		}()
+		}(i)
 	}
 }
 
@@ -76,7 +81,7 @@ func (p *eventWorkerPool) close() {
 
 // GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
 // into PostgreSQL using COPY protocol, and updates a single terminal line in-place.
-func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) error {
+func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, totalWallets int) error {
 	start := time.Now()
 
 	// ponytail: Auto-tune workers based on CPU cores (stdlib runtime package).
@@ -94,6 +99,8 @@ func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) e
 	// ── Progress tracking ─────────────────────────────────────────────────
 	var confirmedCount atomic.Int64
 	progressDone := make(chan struct{})
+	progressCtx, progressCancel := context.WithCancel(ctx)
+	defer progressCancel() // Always cancel to prevent goroutine leak
 
 	fmt.Printf("\n")
 	printProgress(0, totalWallets)
@@ -108,6 +115,8 @@ func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) e
 			case <-progressDone:
 				printProgress(int(confirmedCount.Load()), totalWallets)
 				return
+			case <-progressCtx.Done():
+				return
 			}
 		}
 	}()
@@ -116,8 +125,10 @@ func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) e
 	eventPool := newEventWorkerPool(pool, 4) // ponytail: 4 workers sufficient for event logging
 	defer eventPool.close()
 
-	// ── Parallel key-generation goroutines ────────────────────────────────
-	walletCh := make(chan *wallet.Wallet, workers*10)
+	// ── Parallel key-generation goroutines with backpressure ──────────────
+	// ponytail: Use bounded channel + semaphore to prevent memory explosion
+	walletCh := make(chan *wallet.Wallet, cfg.BatchSize*2)
+	sem := make(chan struct{}, workers) // Semaphore for backpressure
 
 	var genWG sync.WaitGroup
 	perWorker := totalWallets / workers
@@ -129,19 +140,38 @@ func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) e
 			count++
 		}
 		genWG.Add(1)
-		go func(n int) {
+		go func(n int, workerID int) {
 			defer genWG.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ERROR] Generator worker %d panic recovered: %v", workerID, r)
+				}
+			}()
+			
 			for j := 0; j < n; j++ {
+				// Check context cancellation
+				select {
+				case <-ctx.Done():
+					log.Printf("[INFO] Worker %d stopping due to context cancellation", workerID)
+					return
+				default:
+				}
+				
+				sem <- struct{}{} // Acquire semaphore
+				
 				// ponytail: Reuse wallet objects from pool to reduce GC pressure
 				w := walletPool.Get().(*wallet.Wallet)
 				if err := wallet.GenerateInto(w); err != nil {
 					log.Printf("[WARN] Key generation error (skipping): %v", err)
-					walletPool.Put(w) // Return to pool even on error
+					// DO NOT return corrupted object to pool
+					<-sem // Release semaphore
 					continue
 				}
+				
 				walletCh <- w
+				<-sem // Release semaphore after successful send
 			}
-		}(count)
+		}(count, i)
 	}
 
 	go func() {
@@ -235,12 +265,14 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		return nil, nil
 	}
 
-	ctx := context.Background()
+	// ponytail: Add timeout for long-running COPY operations
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback(ctx)
 
 	// Step 1: COPY data into temporary table (no indexes, no constraints = fastest)
 	_, err = tx.Exec(ctx, `
@@ -250,6 +282,7 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		) ON COMMIT DROP
 	`)
 	if err != nil {
+		tx.Rollback(ctx)
 		return nil, fmt.Errorf("create staging table: %w", err)
 	}
 
@@ -263,6 +296,7 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		}),
 	)
 	if err != nil {
+		tx.Rollback(ctx)
 		return nil, fmt.Errorf("copy data: %w", err)
 	}
 
@@ -273,6 +307,7 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		RETURNING id
 	`)
 	if err != nil {
+		tx.Rollback(ctx)
 		return nil, fmt.Errorf("insert from staging: %w", err)
 	}
 	defer rows.Close()
@@ -281,15 +316,22 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
+			tx.Rollback(ctx)
 			return nil, fmt.Errorf("scan id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
+		tx.Rollback(ctx)
 		return nil, err
 	}
 
-	return ids, tx.Commit(ctx)
+	// Commit transaction - no rollback after this point
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+
+	return ids, nil
 }
 
 // logCreationEvents fires a bulk event insert for all wallets in a batch.

@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"evmwalletbot/cli"
 	"evmwalletbot/config"
@@ -29,6 +33,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ── Create context for graceful shutdown ──────────────────────────────
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// ── Setup signal handling for graceful shutdown ───────────────────────
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	
+	go func() {
+		sig := <-sigCh
+		log.Printf("\n[INFO] Received signal %v, initiating graceful shutdown...", sig)
+		cancel() // Cancel context to stop all operations
+		time.Sleep(2 * time.Second) // Grace period for operations to complete
+		log.Println("[INFO] Shutdown complete")
+		os.Exit(0)
+	}()
+
 	// ── Connect to PostgreSQL ─────────────────────────────────────────────
 	log.Println("[INFO] Connecting to database...")
 	pool, err := database.Connect(cfg)
@@ -38,7 +59,10 @@ func main() {
 				"        → Check DB_HOST / DB_PORT / DB_USER / DB_PASSWORD in .env\n", err)
 		os.Exit(1)
 	}
-	defer pool.Close()
+	defer func() {
+		log.Println("[INFO] Closing database connection...")
+		pool.Close()
+	}()
 
 	// ── Auto-migrate schema (idempotent — safe on every run) ──────────────
 	log.Println("[INFO] Verifying database schema...")
@@ -56,5 +80,5 @@ func main() {
 	}
 
 	// ── Launch interactive CLI ────────────────────────────────────────────
-	cli.Run(pool, cfg)
+	cli.Run(ctx, pool, cfg)
 }

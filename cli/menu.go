@@ -22,17 +22,25 @@ import (
 const walletBatchSize = 1000 // 1 user-facing batch = 1000 wallets
 
 // Run is the main entry point for the interactive CLI.
-func Run(pool *pgxpool.Pool, cfg *config.Config) {
+func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	reader := bufio.NewReader(os.Stdin)
 	printBanner()
 
 	for {
+		// Check if context is cancelled (graceful shutdown)
+		select {
+		case <-ctx.Done():
+			fmt.Println("\n[INFO] Shutdown requested, exiting...")
+			return
+		default:
+		}
+
 		printMenu()
 		choice := strings.TrimSpace(readLine(reader))
 
 		switch choice {
 		case "1":
-			handleGenerate(pool, cfg, reader)
+			handleGenerate(ctx, pool, cfg, reader)
 		case "2":
 			handleStats(pool)
 		case "3":
@@ -52,7 +60,7 @@ func Run(pool *pgxpool.Pool, cfg *config.Config) {
 
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
-func handleGenerate(pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
 	fmt.Print("\n  Enter number of wallet batches (1 batch = 1000 wallets): ")
 	input := strings.TrimSpace(readLine(reader))
 
@@ -76,7 +84,7 @@ func handleGenerate(pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader
 	fmt.Printf("[INFO] Generating %d wallets (%d batch(es) of %d)\n",
 		total, batches, walletBatchSize)
 
-	if err := core.GenerateWallets(pool, cfg, total); err != nil {
+	if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {
 		fmt.Printf("\n[ERROR] Generation failed: %v\n", err)
 		return
 	}
