@@ -11,7 +11,7 @@ import (
 
 // RetryConfig holds retry configuration parameters.
 type RetryConfig struct {
-	MaxAttempts int           // Maximum number of retry attempts
+	MaxAttempts  int           // Maximum number of retry attempts
 	InitialDelay time.Duration // Initial delay between retries
 	MaxDelay     time.Duration // Maximum delay between retries
 	Multiplier   float64       // Backoff multiplier
@@ -89,7 +89,7 @@ func IsRetryable(err error) bool {
 	}
 
 	errStr := err.Error()
-	
+
 	// Network-related errors
 	retryablePatterns := []string{
 		"connection refused",
@@ -115,16 +115,49 @@ func IsRetryable(err error) bool {
 
 // WithRetryOnTransient wraps WithRetry but only retries on transient errors.
 func WithRetryOnTransient(ctx context.Context, cfg RetryConfig, fn RetryableFunc) error {
-	return WithRetry(ctx, cfg, func() error {
-		err := fn()
-		if err != nil && !IsRetryable(err) {
-			// Non-retryable error, fail fast
-			log.Printf("[INFO] Non-retryable error, failing immediately: %v", err)
-			// Return error wrapped to prevent further retries
-			return fmt.Errorf("non-retryable: %w", err)
+	var lastErr error
+	delay := cfg.InitialDelay
+
+	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("retry cancelled: %w", ctx.Err())
+		default:
 		}
-		return err
-	})
+
+		err := fn()
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("[INFO] Operation succeeded on attempt %d/%d", attempt, cfg.MaxAttempts)
+			}
+			return nil
+		}
+
+		if !IsRetryable(err) {
+			log.Printf("[INFO] Non-retryable error, failing immediately: %v", err)
+			return err
+		}
+
+		lastErr = err
+		if attempt == cfg.MaxAttempts {
+			break
+		}
+
+		log.Printf("[WARN] Operation failed (attempt %d/%d): %v. Retrying in %v...",
+			attempt, cfg.MaxAttempts, err, delay)
+
+		select {
+		case <-time.After(delay):
+			delay = time.Duration(float64(delay) * cfg.Multiplier)
+			if delay > cfg.MaxDelay {
+				delay = cfg.MaxDelay
+			}
+		case <-ctx.Done():
+			return fmt.Errorf("retry cancelled during backoff: %w", ctx.Err())
+		}
+	}
+
+	return fmt.Errorf("operation failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
 
 // CalculateBackoff calculates the delay for a given attempt number.
@@ -137,11 +170,11 @@ func CalculateBackoff(attempt int, cfg RetryConfig) time.Duration {
 }
 
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || 
-		(len(s) > len(substr) && 
-			(s[:len(substr)] == substr || 
-			 s[len(s)-len(substr):] == substr ||
-			 containsMiddle(s, substr))))
+	return len(s) >= len(substr) && (s == substr ||
+		(len(s) > len(substr) &&
+			(s[:len(substr)] == substr ||
+				s[len(s)-len(substr):] == substr ||
+				containsMiddle(s, substr))))
 }
 
 func containsMiddle(s, substr string) bool {

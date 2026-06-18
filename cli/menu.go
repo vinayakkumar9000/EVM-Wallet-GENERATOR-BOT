@@ -40,23 +40,124 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 
 		switch choice {
 		case "1":
-			handleGenerate(ctx, pool, cfg, reader)
+			handleGenerateMenu(ctx, pool, cfg, reader)
 		case "2":
-			handleStats(ctx, pool)
+			handleStatsMenu(ctx, pool)
 		case "3":
-			handleWalletInfo(ctx, pool, reader)
+			handleLookupMenu(ctx, pool, reader)
 		case "4":
-			handleDatabaseHealth(ctx, pool)
+			handleDatabaseMenu(ctx, pool)
 		case "5":
-			fmt.Println("\n[INFO] Goodbye.\n")
+			handleMonitoringMenu(ctx, pool)
+		case "6":
+			handleBenchmarkMenu()
+		case "7":
+			handleConfigMenu(cfg)
+		case "8":
+			handleHelpMenu()
+		case "9":
+			fmt.Println("\n[INFO] Goodbye.")
 			return
 		default:
-			fmt.Println("\n[WARN] Invalid option — please choose 1 to 5.")
+			fmt.Println("\n[WARN] Invalid option — please choose 1 to 9.")
 		}
 	}
 }
 
 // ─── Menu handlers ────────────────────────────────────────────────────────────
+
+func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+	fmt.Print(`
+  ┌──────────────────────────────────────┐
+  │          GENERATE WALLETS            │
+  │   1   Generate wallet batches        │
+  │   2   Back                           │
+  └──────────────────────────────────────┘
+  Select option: `)
+
+	switch strings.TrimSpace(readLine(reader)) {
+	case "1":
+		handleGenerate(ctx, pool, cfg, reader)
+	case "2":
+		return
+	default:
+		fmt.Println("\n[WARN] Invalid option — please choose 1 or 2.")
+	}
+}
+
+func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool) {
+	handleStats(ctx, pool)
+}
+
+func handleLookupMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+	handleWalletInfo(ctx, pool, reader)
+}
+
+func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool) {
+	handleDatabaseHealth(ctx, pool)
+}
+
+func handleMonitoringMenu(ctx context.Context, pool *pgxpool.Pool) {
+	fmt.Println("\n[INFO] Loading recent events...")
+
+	recent, err := events.GetRecent(ctx, pool, 10)
+	if err != nil {
+		fmt.Printf("[ERROR] Could not load recent events: %v\n", err)
+		return
+	}
+	if len(recent) == 0 {
+		fmt.Println("[INFO] No recent events found.")
+		return
+	}
+
+	for _, ev := range recent {
+		fmt.Printf("  #%d wallet=%d type=%s at=%s data=%s\n",
+			ev.ID, ev.WalletID, ev.EventType, ev.CreatedAt, ev.EventData)
+	}
+}
+
+func handleBenchmarkMenu() {
+	fmt.Println("\n[INFO] Benchmark / tuning is available through Go's benchmark runner.")
+	fmt.Println("       Run: go test -bench=. ./...")
+}
+
+func handleConfigMenu(cfg *config.Config) {
+	fmt.Printf(`
+  ┌──────────────────────────────────────┐
+  │             CONFIGURATION            │
+  ├──────────────────────────────────────┤
+  │  Database       : %-18s │
+  │  User           : %-18s │
+  │  Host           : %-18s │
+  │  Port           : %-18d │
+  │  Max conns      : %-18d │
+  │  Min conns      : %-18d │
+  │  Log level      : %-18s │
+  │  Pool monitor   : %-15d s │
+  └──────────────────────────────────────┘
+`,
+		cfg.DBName,
+		cfg.DBUser,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBMaxConns,
+		cfg.DBMinConns,
+		cfg.LogLevel,
+		cfg.PoolMonitorInterval,
+	)
+}
+
+func handleHelpMenu() {
+	fmt.Print(`
+  Generate wallets     Create wallet batches and store them in PostgreSQL.
+  Statistics           Show cached wallet/event counters.
+  Wallet lookup        Find one wallet by numeric ID.
+  Database tools       Run database health checks.
+  Monitoring           Show recent wallet events.
+  Benchmark / tuning   Print the benchmark command for this build.
+  Configuration        Show loaded runtime settings.
+`)
+}
 
 func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
 	fmt.Print("\n  Enter number of wallet batches (1 batch = 1000 wallets): ")
@@ -189,10 +290,14 @@ func printMenu() {
 	fmt.Print(`
   ┌──────────────────────────────────────┐
   │   1   Generate wallets               │
-  │   2   Show statistics                │
-  │   3   Show wallet info               │
-  │   4   Database health                │
-  │   5   Exit                           │
+  │   2   Statistics                     │
+  │   3   Wallet lookup                  │
+  │   4   Database tools                 │
+  │   5   Monitoring                     │
+  │   6   Benchmark / tuning             │
+  │   7   Configuration                  │
+  │   8   Help                           │
+  │   9   Exit                           │
   └──────────────────────────────────────┘
   Select option: `)
 }
