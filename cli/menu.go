@@ -162,24 +162,6 @@ func handleWalletInfo(pool *pgxpool.Pool, reader *bufio.Reader) {
 func handleRecentEvents(pool *pgxpool.Pool) {
 	fmt.Println("\n[INFO] Fetching recent events...")
 
-func handleDatabaseHealth(pool *pgxpool.Pool) {
-	fmt.Println("\n[INFO] Collecting database health metrics...")
-
-	metrics, err := core.CollectHealthMetrics(pool)
-	if err != nil {
-		fmt.Printf("[ERROR] Could not collect health metrics: %v\n", err)
-		return
-	}
-
-	core.PrintHealthMetrics(metrics)
-
-	// Record metrics to database_health table for historical tracking
-	if err := core.RecordHealthMetrics(pool); err != nil {
-		fmt.Printf("[WARN] Could not record health metrics: %v\n", err)
-	}
-}
-
-
 	evList, err := events.GetRecent(pool, 20)
 	if err != nil {
 		fmt.Printf("[ERROR] Could not fetch events: %v\n", err)
@@ -204,6 +186,12 @@ func handleDatabaseHealth(pool *pgxpool.Pool) {
 			ev.ID, ev.WalletID, ev.EventType, ev.CreatedAt, data)
 	}
 	fmt.Println()
+}
+
+func handleDatabaseHealth(pool *pgxpool.Pool) {
+	if err := core.RunHealthCheck(pool); err != nil {
+		fmt.Printf("[ERROR] Health check failed: %v\n", err)
+	}
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
