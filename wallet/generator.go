@@ -34,6 +34,23 @@ func Generate() (*Wallet, error) {
 	}, nil
 }
 
+// GenerateInto generates a new random EVM wallet into an existing Wallet object.
+// This allows reusing wallet objects from sync.Pool to reduce GC pressure.
+// ponytail: Reuse pattern for high-throughput generation (>1M wallets).
+func GenerateInto(w *Wallet) error {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		return fmt.Errorf("secp256k1 key generation: %w", err)
+	}
+
+	address := crypto.PubkeyToAddress(key.PublicKey)
+	privBytes := crypto.FromECDSA(key)
+
+	w.Address = address.Bytes()
+	w.PrivateKey = privBytes
+	return nil
+}
+
 // AddressHex returns the EIP-55 mixed-case checksummed address string.
 func (w *Wallet) AddressHex() string {
 	return "0x" + hex.EncodeToString(w.Address)

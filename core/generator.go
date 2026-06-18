@@ -132,9 +132,11 @@ func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) e
 		go func(n int) {
 			defer genWG.Done()
 			for j := 0; j < n; j++ {
-				w, err := wallet.Generate()
-				if err != nil {
+				// ponytail: Reuse wallet objects from pool to reduce GC pressure
+				w := walletPool.Get().(*wallet.Wallet)
+				if err := wallet.GenerateInto(w); err != nil {
 					log.Printf("[WARN] Key generation error (skipping): %v", err)
+					walletPool.Put(w) // Return to pool even on error
 					continue
 				}
 				walletCh <- w
