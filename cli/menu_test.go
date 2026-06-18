@@ -22,3 +22,17 @@ func TestGenerationTotalRejectsInvalidInput(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateBatchSizeMatchesConfigLimits(t *testing.T) {
+	for _, n := range []int{1, 500, 1000} {
+		if err := validateBatchSize(n); err != nil {
+			t.Fatalf("validateBatchSize(%d) returned error: %v", n, err)
+		}
+	}
+
+	for _, n := range []int{0, 1001} {
+		if err := validateBatchSize(n); err == nil {
+			t.Fatalf("validateBatchSize(%d) returned nil; want error", n)
+		}
+	}
+}

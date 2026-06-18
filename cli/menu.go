@@ -50,7 +50,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		case "6":
 			handleBenchmarkMenu()
 		case "7":
-			handleConfigMenu(cfg)
+			handleConfigMenu(cfg, reader)
 		case "8":
 			handleHelpMenu()
 		case "9":
@@ -104,8 +104,9 @@ func handleBenchmarkMenu() {
 	fmt.Println("       Run: go test -bench=. ./...")
 }
 
-func handleConfigMenu(cfg *config.Config) {
-	fmt.Printf(`
+func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
+	for {
+		fmt.Printf(`
   ┌──────────────────────────────────────┐
   │             CONFIGURATION            │
   ├──────────────────────────────────────┤
@@ -115,19 +116,34 @@ func handleConfigMenu(cfg *config.Config) {
   │  Port           : %-18d │
   │  Max conns      : %-18d │
   │  Min conns      : %-18d │
+  │  Batch size     : %-15d wallets │
   │  Log level      : %-18s │
   │  Pool monitor   : %-15d s │
+  ├──────────────────────────────────────┤
+  │   1   Update batch size              │
+  │   2   Back                           │
   └──────────────────────────────────────┘
-`,
-		cfg.DBName,
-		cfg.DBUser,
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBMaxConns,
-		cfg.DBMinConns,
-		cfg.LogLevel,
-		cfg.PoolMonitorInterval,
-	)
+  Select option: `,
+			cfg.DBName,
+			cfg.DBUser,
+			cfg.DBHost,
+			cfg.DBPort,
+			cfg.DBMaxConns,
+			cfg.DBMinConns,
+			cfg.BatchSize,
+			cfg.LogLevel,
+			cfg.PoolMonitorInterval,
+		)
+
+		switch strings.TrimSpace(readLine(reader)) {
+		case "1":
+			changeGenerationSettings(cfg, reader)
+		case "2":
+			return
+		default:
+			fmt.Println("\n[WARN] Invalid option — please choose 1 or 2.")
+		}
+	}
 }
 
 func handleHelpMenu() {
@@ -162,7 +178,7 @@ func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 				generateWallets(ctx, pool, cfg, total)
 			}
 		case "2":
-			batches, ok := promptPositiveInt(reader, "\n  Enter number of batches: ")
+			batches, ok := promptPositiveInt(reader, fmt.Sprintf("\n  Enter number of batches (1 batch = %d wallets): ", cfg.BatchSize))
 			if !ok {
 				continue
 			}
@@ -214,12 +230,22 @@ func changeGenerationSettings(cfg *config.Config, reader *bufio.Reader) {
 	if !ok {
 		return
 	}
-	if batchSize > 1000 {
-		fmt.Println("\n[ERROR] Batch size cannot exceed 1000 (PostgreSQL parameter limit safety).")
+	if err := validateBatchSize(batchSize); err != nil {
+		fmt.Printf("\n[ERROR] %v\n", err)
 		return
 	}
 	cfg.BatchSize = batchSize
 	fmt.Printf("[INFO] Generation batch size set to %d wallets.\n", cfg.BatchSize)
+}
+
+func validateBatchSize(batchSize int) error {
+	if batchSize < 1 {
+		return fmt.Errorf("BATCH_SIZE must be at least 1, got %d", batchSize)
+	}
+	if batchSize > 1000 {
+		return fmt.Errorf("BATCH_SIZE cannot exceed 1000 (PostgreSQL limit), got %d", batchSize)
+	}
+	return nil
 }
 
 func previewGenerationSettings(cfg *config.Config) {
