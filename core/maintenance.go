@@ -92,8 +92,8 @@ func RecordHealthMetrics(ctx context.Context, pool *pgxpool.Pool, metrics []Heal
 				dead_tuples, live_tuples, 
 				last_vacuum, last_autovacuum
 			) VALUES ($1, $2, $3, $4, $5, $6, $7)
-		`, m.TableName, m.TotalSize, m.IndexSize, 
-			m.DeadTuples, m.LiveTuples, 
+		`, m.TableName, m.TotalSize, m.IndexSize,
+			m.DeadTuples, m.LiveTuples,
 			m.LastVacuum, m.LastAutovacuum)
 	}
 
@@ -113,7 +113,7 @@ func RecordHealthMetrics(ctx context.Context, pool *pgxpool.Pool, metrics []Heal
 // PrintHealthMetrics displays health metrics in a formatted table.
 func PrintHealthMetrics(metrics []HealthMetrics) {
 	if len(metrics) == 0 {
-		fmt.Println("\n[INFO] No health metrics available\n")
+		fmt.Println("\n[INFO] No health metrics available")
 		return
 	}
 
@@ -130,16 +130,16 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 	for _, m := range metrics {
 		fmt.Printf("  ║  Table: %-68s ║\n", m.TableName)
 		fmt.Println(line)
-		
+
 		// Size information
 		fmt.Printf("  ║    Total Size      : %-54s ║\n", formatBytes(m.TotalSize))
 		fmt.Printf("  ║    Index Size      : %-54s ║\n", formatBytes(m.IndexSize))
 		fmt.Printf("  ║    Data Size       : %-54s ║\n", formatBytes(m.TotalSize-m.IndexSize))
-		
+
 		// Tuple information
 		fmt.Printf("  ║    Live Tuples     : %-54d ║\n", m.LiveTuples)
 		fmt.Printf("  ║    Dead Tuples     : %-54d ║\n", m.DeadTuples)
-		
+
 		// Bloat warning
 		bloatStatus := fmt.Sprintf("%.1f%%", m.BloatPercent)
 		if m.BloatPercent > 20 {
@@ -150,20 +150,20 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 			bloatStatus += " ✓ HEALTHY"
 		}
 		fmt.Printf("  ║    Bloat           : %-54s ║\n", bloatStatus)
-		
+
 		// Vacuum history
 		if m.LastVacuum != nil {
 			fmt.Printf("  ║    Last VACUUM     : %-54s ║\n", m.LastVacuum.Format("2006-01-02 15:04:05"))
 		} else {
 			fmt.Printf("  ║    Last VACUUM     : %-54s ║\n", "Never")
 		}
-		
+
 		if m.LastAutovacuum != nil {
 			fmt.Printf("  ║    Last Autovacuum : %-54s ║\n", m.LastAutovacuum.Format("2006-01-02 15:04:05"))
 		} else {
 			fmt.Printf("  ║    Last Autovacuum : %-54s ║\n", "Never")
 		}
-		
+
 		fmt.Println(line)
 	}
 
@@ -188,7 +188,7 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 // RunHealthCheck collects metrics, displays them, and records to database.
 func RunHealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 	log.Println("[INFO] Collecting database health metrics...")
-	
+
 	metrics, err := CollectHealthMetrics(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("collect metrics: %w", err)

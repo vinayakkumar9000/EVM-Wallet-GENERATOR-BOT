@@ -40,7 +40,7 @@ func init() {
 	if warmupSize < MinPoolWarmup {
 		warmupSize = MinPoolWarmup
 	}
-	
+
 	for i := 0; i < warmupSize; i++ {
 		walletPool.Put(&wallet.Wallet{
 			Address:    make([]byte, 20),
@@ -56,6 +56,9 @@ func init() {
 // GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
 // into PostgreSQL using COPY protocol, and updates a single terminal line in-place.
 func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, totalWallets int) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	start := time.Now()
 
 	// ponytail: Auto-tune workers based on CPU cores (stdlib runtime package).
@@ -119,7 +122,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 					log.Printf("[ERROR] Generator worker %d panic recovered: %v", workerID, r)
 				}
 			}()
-			
+
 			for j := 0; j < n; j++ {
 				// Check context cancellation
 				select {
@@ -128,7 +131,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 					return
 				default:
 				}
-				
+
 				// ponytail: Reuse wallet objects from pool to reduce GC pressure
 				w := walletPool.Get().(*wallet.Wallet)
 				if err := wallet.GenerateInto(w); err != nil {
@@ -136,15 +139,15 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 					// DO NOT return corrupted object to pool
 					continue
 				}
-				
+
 				// Send with context cancellation check to prevent blocking during shutdown
-			select {
-			case walletCh <- w:
-				// Successfully sent
-			case <-ctx.Done():
-				log.Printf("[INFO] Worker %d stopping during send (context cancelled)", workerID)
-				return
-			}
+				select {
+				case walletCh <- w:
+					// Successfully sent
+				case <-ctx.Done():
+					log.Printf("[INFO] Worker %d stopping during send (context cancelled)", workerID)
+					return
+				}
 			}
 		}(count, i)
 	}
@@ -163,7 +166,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 
 		if len(batch) >= cfg.BatchSize {
 			batchNum++
-			
+
 			// Retry database insert with exponential backoff
 			var ids []int64
 			retryErr := WithRetry(ctx, DefaultRetryConfig(), func() error {
@@ -171,62 +174,22 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 				ids, err = insertWalletBatchCopy(pool, batch)
 				return err
 			})
-			
-					if retryErr != nil {
-						close(progressDone)
-						cancel() // Cancel context to stop workers
-						genWG.Wait() // Wait for all workers to finish
-						return fmt.Errorf("DB insert (batch %d) failed after retries: %w", batchNum, retryErr)
-					}
+
+			if retryErr != nil {
+				close(progressDone)
+				cancel()     // Cancel context to stop workers
+				genWG.Wait() // Wait for all workers to finish
+				return fmt.Errorf("DB insert (batch %d) failed after retries: %w", batchNum, retryErr)
+			}
 			confirmedCount.Add(int64(len(ids)))
 			batchesCompleted.Add(1)
-			
+
 			// Log batch completion (not per-wallet) - optional via config
 			if cfg.EnableLogging {
 				log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
 			}
 
-					// ponytail: Return wallet objects to pool for reuse.
-					// Reset wallet data before returning to pool to prevent data leakage
-					for _, w := range batch {
-						// Clear sensitive data
-						for i := range w.Address {
-							w.Address[i] = 0
-						}
-						for i := range w.PrivateKey {
-							w.PrivateKey[i] = 0
-						}
-						walletPool.Put(w)
-					}
-					batch = batch[:0]		}
-	}
-
-	// ── Flush remainder ───────────────────────────────────────────────────
-	if len(batch) > 0 {
-		batchNum++
-		
-		// Retry database insert with exponential backoff
-		var ids []int64
-		retryErr := WithRetry(ctx, DefaultRetryConfig(), func() error {
-			var err error
-			ids, err = insertWalletBatchCopy(pool, batch)
-			return err
-		})
-		
-			if retryErr != nil {
-				close(progressDone)
-				cancel() // Cancel context to stop workers
-				genWG.Wait() // Wait for all workers to finish
-				return fmt.Errorf("DB insert (final batch) failed after retries: %w", retryErr)
-			}
-		confirmedCount.Add(int64(len(ids)))
-		batchesCompleted.Add(1)
-		
-		// Log batch completion (not per-wallet) - optional via config
-		if cfg.EnableLogging {
-			log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
-		}
-
+			// ponytail: Return wallet objects to pool for reuse.
 			// Reset wallet data before returning to pool to prevent data leakage
 			for _, w := range batch {
 				// Clear sensitive data
@@ -237,7 +200,49 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 					w.PrivateKey[i] = 0
 				}
 				walletPool.Put(w)
-			}	}
+			}
+			batch = batch[:0]
+		}
+	}
+
+	// ── Flush remainder ───────────────────────────────────────────────────
+	if len(batch) > 0 {
+		batchNum++
+
+		// Retry database insert with exponential backoff
+		var ids []int64
+		retryErr := WithRetry(ctx, DefaultRetryConfig(), func() error {
+			var err error
+			ids, err = insertWalletBatchCopy(pool, batch)
+			return err
+		})
+
+		if retryErr != nil {
+			close(progressDone)
+			cancel()     // Cancel context to stop workers
+			genWG.Wait() // Wait for all workers to finish
+			return fmt.Errorf("DB insert (final batch) failed after retries: %w", retryErr)
+		}
+		confirmedCount.Add(int64(len(ids)))
+		batchesCompleted.Add(1)
+
+		// Log batch completion (not per-wallet) - optional via config
+		if cfg.EnableLogging {
+			log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
+		}
+
+		// Reset wallet data before returning to pool to prevent data leakage
+		for _, w := range batch {
+			// Clear sensitive data
+			for i := range w.Address {
+				w.Address[i] = 0
+			}
+			for i := range w.PrivateKey {
+				w.PrivateKey[i] = 0
+			}
+			walletPool.Put(w)
+		}
+	}
 
 	close(progressDone)
 	time.Sleep(BatchProcessDelay)
@@ -263,7 +268,7 @@ func printProgress(done, total int) {
 			pct = 100
 		}
 	}
-	
+
 	// Prevent negative percentages
 	if pct < 0 {
 		pct = 0
