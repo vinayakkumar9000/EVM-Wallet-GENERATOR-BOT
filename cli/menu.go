@@ -3,13 +3,16 @@ package cli
 
 import (
 	"bufio"
-	"database/sql"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"evmwalletbot/config"
 	"evmwalletbot/core"
@@ -19,7 +22,7 @@ import (
 const walletBatchSize = 1000 // 1 user-facing batch = 1000 wallets
 
 // Run is the main entry point for the interactive CLI.
-func Run(db *sql.DB, cfg *config.Config) {
+func Run(pool *pgxpool.Pool, cfg *config.Config) {
 	reader := bufio.NewReader(os.Stdin)
 	printBanner()
 
@@ -29,25 +32,27 @@ func Run(db *sql.DB, cfg *config.Config) {
 
 		switch choice {
 		case "1":
-			handleGenerate(db, cfg, reader)
+			handleGenerate(pool, cfg, reader)
 		case "2":
-			handleStats(db)
+			handleStats(pool)
 		case "3":
-			handleWalletInfo(db, reader)
+			handleWalletInfo(pool, reader)
 		case "4":
-			handleRecentEvents(db)
+			handleRecentEvents(pool)
 		case "5":
+			handleDatabaseHealth(pool)
+		case "6":
 			fmt.Println("\n[INFO] Goodbye.\n")
 			return
 		default:
-			fmt.Println("\n[WARN] Invalid option — please choose 1 to 5.")
+			fmt.Println("\n[WARN] Invalid option — please choose 1 to 6.")
 		}
 	}
 }
 
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
-func handleGenerate(db *sql.DB, cfg *config.Config, reader *bufio.Reader) {
+func handleGenerate(pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
 	fmt.Print("\n  Enter number of wallet batches (1 batch = 1000 wallets): ")
 	input := strings.TrimSpace(readLine(reader))
 
@@ -57,8 +62,6 @@ func handleGenerate(db *sql.DB, cfg *config.Config, reader *bufio.Reader) {
 		return
 	}
 
-	// BUG FIX #7 — safety cap: max 10,000 batches (10M wallets) per run.
-	// Without this, a typo like "100000" silently queues 100M wallets.
 	const maxBatches = 10_000
 	if batches > maxBatches {
 		fmt.Printf("\n[ERROR] Maximum is %d batches (%d wallets) per run.\n",
@@ -69,12 +72,11 @@ func handleGenerate(db *sql.DB, cfg *config.Config, reader *bufio.Reader) {
 
 	total := batches * walletBatchSize
 
-	// DB is already connected since startup — no reconnect happens here.
 	fmt.Printf("\n[INFO] Starting wallet generation\n")
 	fmt.Printf("[INFO] Generating %d wallets (%d batch(es) of %d)\n",
 		total, batches, walletBatchSize)
 
-	if err := core.GenerateWallets(db, cfg, total); err != nil {
+	if err := core.GenerateWallets(pool, cfg, total); err != nil {
 		fmt.Printf("\n[ERROR] Generation failed: %v\n", err)
 		return
 	}
@@ -82,10 +84,10 @@ func handleGenerate(db *sql.DB, cfg *config.Config, reader *bufio.Reader) {
 	fmt.Printf("[INFO] Batch finished — all %d wallets stored successfully.\n\n", total)
 }
 
-func handleStats(db *sql.DB) {
+func handleStats(pool *pgxpool.Pool) {
 	fmt.Println("\n[INFO] Loading statistics...")
 
-	s, err := core.GetStats(db)
+	s, err := core.GetStats(pool)
 	if err != nil {
 		fmt.Printf("[ERROR] Could not load stats: %v\n", err)
 		return
@@ -93,7 +95,7 @@ func handleStats(db *sql.DB) {
 	core.PrintStats(s)
 }
 
-func handleWalletInfo(db *sql.DB, reader *bufio.Reader) {
+func handleWalletInfo(pool *pgxpool.Pool, reader *bufio.Reader) {
 	fmt.Print("\n  Enter wallet ID (numeric): ")
 	input := strings.TrimSpace(readLine(reader))
 
@@ -110,14 +112,15 @@ func handleWalletInfo(db *sql.DB, reader *bufio.Reader) {
 		Status    int
 	}
 
+	ctx := context.Background()
 	var w walletRow
-	err = db.QueryRow(`
+	err = pool.QueryRow(ctx, `
 		SELECT id, address, created_at, status
 		FROM wallets
 		WHERE id = $1
 	`, id).Scan(&w.ID, &w.Address, &w.CreatedAt, &w.Status)
 
-	if err == sql.ErrNoRows {
+	if err == pgx.ErrNoRows {
 		fmt.Printf("\n[WARN] No wallet found with ID %d.\n", id)
 		return
 	}
@@ -126,9 +129,8 @@ func handleWalletInfo(db *sql.DB, reader *bufio.Reader) {
 		return
 	}
 
-	// Count events for this wallet
 	var eventCount int64
-	_ = db.QueryRow(`SELECT COUNT(*) FROM wallet_events WHERE wallet_id = $1`, id).Scan(&eventCount)
+	_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallet_events WHERE wallet_id = $1`, id).Scan(&eventCount)
 
 	fmt.Printf(`
   ╔══════════════════════════════════════════════════════╗
@@ -149,10 +151,28 @@ func handleWalletInfo(db *sql.DB, reader *bufio.Reader) {
 	)
 }
 
-func handleRecentEvents(db *sql.DB) {
+func handleRecentEvents(pool *pgxpool.Pool) {
 	fmt.Println("\n[INFO] Fetching recent events...")
 
-	evList, err := events.GetRecent(db, 20)
+func handleDatabaseHealth(pool *pgxpool.Pool) {
+	fmt.Println("\n[INFO] Collecting database health metrics...")
+
+	metrics, err := core.CollectHealthMetrics(pool)
+	if err != nil {
+		fmt.Printf("[ERROR] Could not collect health metrics: %v\n", err)
+		return
+	}
+
+	core.PrintHealthMetrics(metrics)
+
+	// Record metrics to database_health table for historical tracking
+	if err := core.RecordHealthMetrics(pool); err != nil {
+		fmt.Printf("[WARN] Could not record health metrics: %v\n", err)
+	}
+}
+
+
+	evList, err := events.GetRecent(pool, 20)
 	if err != nil {
 		fmt.Printf("[ERROR] Could not fetch events: %v\n", err)
 		return
@@ -200,7 +220,8 @@ func printMenu() {
   │   2   Show statistics                │
   │   3   Show wallet info               │
   │   4   Show recent events             │
-  │   5   Exit                           │
+  │   5   Database health                │
+  │   6   Exit                           │
   └──────────────────────────────────────┘
   Select option: `)
 }

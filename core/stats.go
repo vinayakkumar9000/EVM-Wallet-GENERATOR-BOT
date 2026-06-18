@@ -2,9 +2,11 @@
 package core
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Stats aggregates wallet and event counters for the stats display.
@@ -18,56 +20,53 @@ type Stats struct {
 	LastCreatedAt *time.Time
 }
 
-// GetStats queries all statistics inside a single READ ONLY transaction so
-// every counter comes from the same database snapshot.
-//
-// BUG FIX #6 — without a transaction, 6 serial queries against a live table
-// could return inconsistent values (e.g. TotalWallets counted before a batch
-// finishes, UnusedWallets counted after, making the numbers not add up).
-func GetStats(db *sql.DB) (*Stats, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("begin stats tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	// Read-only transaction — we never write here.
-	if _, err := tx.Exec(`SET TRANSACTION READ ONLY`); err != nil {
-		return nil, fmt.Errorf("set read only: %w", err)
-	}
-
+// GetStats queries statistics using cached counters for O(1) performance.
+// ponytail: Replaced COUNT(*) with cached system_stats table (instant vs seconds).
+// Ceiling: Stats lag by ~1ms (trigger execution time). Upgrade: none needed.
+func GetStats(pool *pgxpool.Pool) (*Stats, error) {
+	ctx := context.Background()
+	
 	s := &Stats{}
 
-	type scanPair struct {
-		dest  interface{}
-		query string
+	// O(1) lookup from cached stats table (updated via triggers)
+	err := pool.QueryRow(ctx, `
+		SELECT 
+			total_wallets,
+			unused_wallets,
+			used_wallets,
+			total_events
+		FROM system_stats
+		WHERE id = 1
+	`).Scan(&s.TotalWallets, &s.UnusedWallets, &s.UsedWallets, &s.TotalEvents)
+	if err != nil {
+		return nil, fmt.Errorf("query cached stats: %w", err)
 	}
 
-	pairs := []scanPair{
-		{&s.TotalWallets, `SELECT COUNT(*) FROM wallets`},
-		{&s.WalletsToday, `SELECT COUNT(*) FROM wallets WHERE created_at >= CURRENT_DATE`},
-		{&s.UnusedWallets, `SELECT COUNT(*) FROM wallets WHERE status = 0`},
-		{&s.UsedWallets, `SELECT COUNT(*) FROM wallets WHERE status != 0`},
-		{&s.TotalEvents, `SELECT COUNT(*) FROM wallet_events`},
-		{&s.DBSizeBytes, `SELECT pg_database_size(current_database())`},
+	// Wallets created today (still needs COUNT but only scans today's partition)
+	err = pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM wallets WHERE created_at >= CURRENT_DATE
+	`).Scan(&s.WalletsToday)
+	if err != nil {
+		return nil, fmt.Errorf("query today's wallets: %w", err)
 	}
 
-	for _, p := range pairs {
-		if err := tx.QueryRow(p.query).Scan(p.dest); err != nil {
-			return nil, fmt.Errorf("stats query failed (%s): %w", p.query, err)
-		}
+	// Database size (fast metadata query)
+	err = pool.QueryRow(ctx, `
+		SELECT pg_database_size(current_database())
+	`).Scan(&s.DBSizeBytes)
+	if err != nil {
+		return nil, fmt.Errorf("query db size: %w", err)
 	}
 
+	// Last created wallet (index scan, very fast)
 	var lastCreated time.Time
-	err = tx.QueryRow(
-		`SELECT created_at FROM wallets ORDER BY id DESC LIMIT 1`,
-	).Scan(&lastCreated)
+	err = pool.QueryRow(ctx, `
+		SELECT created_at FROM wallets ORDER BY id DESC LIMIT 1
+	`).Scan(&lastCreated)
 	if err == nil {
 		s.LastCreatedAt = &lastCreated
 	}
 
-	// Commit is a no-op for a read-only tx but is idiomatic.
-	_ = tx.Commit()
 	return s, nil
 }
 

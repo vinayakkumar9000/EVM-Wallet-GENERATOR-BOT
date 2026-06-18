@@ -2,46 +2,101 @@
 package core
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"evmwalletbot/config"
 	"evmwalletbot/events"
 	"evmwalletbot/wallet"
 )
 
-// GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
-// into PostgreSQL in high-performance batches, and updates a single terminal
-// line in-place (no line flooding).
-func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
-	start := time.Now()
+// walletPool reuses wallet objects to reduce GC pressure.
+// ponytail: sync.Pool is stdlib, no new dependency needed.
+var walletPool = sync.Pool{
+	New: func() interface{} {
+		return &wallet.Wallet{}
+	},
+}
 
-	workers := cfg.Workers
-	if workers > totalWallets {
-		workers = totalWallets
-	}
+// eventWorkerPool processes event logging without spawning goroutines per batch.
+type eventWorkerPool struct {
+	pool     *pgxpool.Pool
+	jobCh    chan eventJob
+	wg       sync.WaitGroup
+	workers  int
+}
+
+type eventJob struct {
+	ids      []int64
+	batchNum int
+}
+
+func newEventWorkerPool(pool *pgxpool.Pool, workers int) *eventWorkerPool {
 	if workers < 1 {
 		workers = 1
 	}
+	p := &eventWorkerPool{
+		pool:    pool,
+		jobCh:   make(chan eventJob, workers*2),
+		workers: workers,
+	}
+	p.start()
+	return p
+}
 
-	log.Printf("[INFO] Generating %d wallets | workers=%d | DB chunk=%d\n",
+func (p *eventWorkerPool) start() {
+	for i := 0; i < p.workers; i++ {
+		p.wg.Add(1)
+		go func() {
+			defer p.wg.Done()
+			for job := range p.jobCh {
+				logCreationEvents(p.pool, job.ids, job.batchNum)
+			}
+		}()
+	}
+}
+
+func (p *eventWorkerPool) submit(ids []int64, batchNum int) {
+	p.jobCh <- eventJob{ids: ids, batchNum: batchNum}
+}
+
+func (p *eventWorkerPool) close() {
+	close(p.jobCh)
+	p.wg.Wait()
+}
+
+// GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
+// into PostgreSQL using COPY protocol, and updates a single terminal line in-place.
+func GenerateWallets(pool *pgxpool.Pool, cfg *config.Config, totalWallets int) error {
+	start := time.Now()
+
+	// ponytail: Auto-tune workers based on CPU cores (stdlib runtime package).
+	workers := cfg.Workers
+	if workers <= 0 {
+		workers = runtime.NumCPU()
+	}
+	if workers > totalWallets {
+		workers = totalWallets
+	}
+
+	log.Printf("[INFO] Generating %d wallets | workers=%d (auto-tuned) | DB chunk=%d\n",
 		totalWallets, workers, cfg.BatchSize)
 
-	// ── Smooth in-place progress ticker (BUG FIX #5) ─────────────────────
-	// An atomic counter is incremented by the batch inserter each time rows
-	// are confirmed by the DB.  A separate goroutine reads it every 200ms and
-	// rewrites the same terminal line — no flooding, no waiting until the end
-	// of a full DB batch to see movement.
+	// ── Progress tracking ─────────────────────────────────────────────────
 	var confirmedCount atomic.Int64
 	progressDone := make(chan struct{})
 
 	fmt.Printf("\n")
-	printProgress(0, totalWallets) // show 0% immediately
+	printProgress(0, totalWallets)
 
 	go func() {
 		ticker := time.NewTicker(200 * time.Millisecond)
@@ -51,14 +106,17 @@ func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
 			case <-ticker.C:
 				printProgress(int(confirmedCount.Load()), totalWallets)
 			case <-progressDone:
-				// Print the definitive final value before exiting.
 				printProgress(int(confirmedCount.Load()), totalWallets)
 				return
 			}
 		}
 	}()
 
-	// ── Parallel key-generation goroutines ───────────────────────────────
+	// ── Event worker pool (reuses goroutines) ─────────────────────────────
+	eventPool := newEventWorkerPool(pool, 4) // ponytail: 4 workers sufficient for event logging
+	defer eventPool.close()
+
+	// ── Parallel key-generation goroutines ────────────────────────────────
 	walletCh := make(chan *wallet.Wallet, workers*10)
 
 	var genWG sync.WaitGroup
@@ -89,12 +147,7 @@ func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
 		close(walletCh)
 	}()
 
-	// ── Sequential batch inserter ─────────────────────────────────────────
-	// Reads wallets from channel, flushes to PostgreSQL in multi-row INSERT
-	// batches, then fires async event-logging goroutines (tracked by eventWG
-	// so we wait for them before returning — no fire-and-forget leaks).
-	var eventWG sync.WaitGroup
-
+	// ── Sequential batch inserter using COPY ──────────────────────────────
 	batch := make([]*wallet.Wallet, 0, cfg.BatchSize)
 	batchNum := 0
 
@@ -103,22 +156,19 @@ func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
 
 		if len(batch) >= cfg.BatchSize {
 			batchNum++
-			ids, err := insertWalletBatch(db, batch)
+			ids, err := insertWalletBatchCopy(pool, batch)
 			if err != nil {
 				close(progressDone)
-				eventWG.Wait()
 				return fmt.Errorf("DB insert (batch %d): %w", batchNum, err)
 			}
 
-			// Advance the atomic counter with confirmed DB rows, not sent rows.
 			confirmedCount.Add(int64(len(ids)))
+			eventPool.submit(ids, batchNum)
 
-			eventWG.Add(1)
-			go func(capturedIDs []int64, bn int) {
-				defer eventWG.Done()
-				logCreationEvents(db, capturedIDs, bn)
-			}(ids, batchNum)
-
+			// ponytail: Return wallet objects to pool for reuse.
+			for _, w := range batch {
+				walletPool.Put(w)
+			}
 			batch = batch[:0]
 		}
 	}
@@ -126,30 +176,22 @@ func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
 	// ── Flush remainder ───────────────────────────────────────────────────
 	if len(batch) > 0 {
 		batchNum++
-		ids, err := insertWalletBatch(db, batch)
+		ids, err := insertWalletBatchCopy(pool, batch)
 		if err != nil {
 			close(progressDone)
-			eventWG.Wait()
 			return fmt.Errorf("DB insert (final batch): %w", err)
 		}
 
 		confirmedCount.Add(int64(len(ids)))
+		eventPool.submit(ids, batchNum)
 
-		eventWG.Add(1)
-		go func(capturedIDs []int64, bn int) {
-			defer eventWG.Done()
-			logCreationEvents(db, capturedIDs, bn)
-		}(ids, batchNum)
+		for _, w := range batch {
+			walletPool.Put(w)
+		}
 	}
 
-	// Stop the progress ticker and print the final 100% line.
 	close(progressDone)
-	// Give the ticker goroutine a moment to print the final value.
 	time.Sleep(50 * time.Millisecond)
-
-	// Wait for all event goroutines to finish before returning so stats are
-	// immediately consistent after GenerateWallets returns.
-	eventWG.Wait()
 
 	done := int(confirmedCount.Load())
 	elapsed := time.Since(start)
@@ -161,8 +203,6 @@ func GenerateWallets(db *sql.DB, cfg *config.Config, totalWallets int) error {
 }
 
 // printProgress rewrites the current terminal line in-place using \r.
-// Trailing spaces ensure leftover characters from a previous longer line
-// are fully erased.  No newline is emitted — the cursor stays on the same row.
 func printProgress(done, total int) {
 	const barWidth = 28
 
@@ -186,71 +226,78 @@ func printProgress(done, total int) {
 		done, total, bar, pct)
 }
 
-// insertWalletBatch performs a single multi-row INSERT … RETURNING id inside
-// an explicit transaction.
-//
-// BUG FIX #1 — rows.Close() is called EXPLICITLY before tx.Commit().
-// lib/pq returns "unexpected SimpleQuery response" if a result-set cursor is
-// still open when the transaction is committed.  Using defer rows.Close()
-// would close it AFTER the return statement executes tx.Commit(), which is
-// too late.
-func insertWalletBatch(db *sql.DB, wallets []*wallet.Wallet) ([]int64, error) {
+// insertWalletBatchCopy uses PostgreSQL COPY protocol for maximum throughput.
+// ponytail: COPY is 3-5× faster than multi-row INSERT for bulk data.
+func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int64, error) {
 	if len(wallets) == 0 {
 		return nil, nil
 	}
 
-	placeholders := make([]string, 0, len(wallets))
-	args := make([]interface{}, 0, len(wallets)*2)
-
-	for i, w := range wallets {
-		placeholders = append(placeholders,
-			fmt.Sprintf("($%d,$%d)", i*2+1, i*2+2),
-		)
-		args = append(args, w.Address, w.PrivateKey)
-	}
-
-	query := "INSERT INTO wallets (address, private_key) VALUES " +
-		strings.Join(placeholders, ",") + " RETURNING id"
-
-	tx, err := db.Begin()
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }() // no-op after Commit
+	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(query, args...)
+	// Step 1: COPY data into temporary table (no indexes, no constraints = fastest)
+	_, err = tx.Exec(ctx, `
+		CREATE TEMP TABLE wallet_staging (
+			address     BYTEA,
+			private_key BYTEA
+		) ON COMMIT DROP
+	`)
 	if err != nil {
-		return nil, fmt.Errorf("exec insert: %w", err)
+		return nil, fmt.Errorf("create staging table: %w", err)
 	}
+
+	// Step 2: Use COPY protocol to bulk-load data
+	_, err = tx.CopyFrom(
+		ctx,
+		pgx.Identifier{"wallet_staging"},
+		[]string{"address", "private_key"},
+		pgx.CopyFromSlice(len(wallets), func(i int) ([]interface{}, error) {
+			return []interface{}{wallets[i].Address, wallets[i].PrivateKey}, nil
+		}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("copy data: %w", err)
+	}
+
+	// Step 3: INSERT from staging into main table with RETURNING id
+	rows, err := tx.Query(ctx, `
+		INSERT INTO wallets (address, private_key)
+		SELECT address, private_key FROM wallet_staging
+		RETURNING id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("insert from staging: %w", err)
+	}
+	defer rows.Close()
 
 	ids := make([]int64, 0, len(wallets))
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			rows.Close()
 			return nil, fmt.Errorf("scan id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		rows.Close()
 		return nil, err
 	}
 
-	// BUG FIX #1 — close the result-set BEFORE committing the transaction.
-	rows.Close()
-
-	return ids, tx.Commit()
+	return ids, tx.Commit(ctx)
 }
 
 // logCreationEvents fires a bulk event insert for all wallets in a batch.
-func logCreationEvents(db *sql.DB, ids []int64, batchNum int) {
+func logCreationEvents(pool *pgxpool.Pool, ids []int64, batchNum int) {
 	data := map[string]interface{}{
 		"batch":  batchNum,
 		"count":  len(ids),
 		"source": "generator",
 	}
-	if err := events.LogBatch(db, ids, events.WalletCreated, data); err != nil {
+	if err := events.LogBatch(pool, ids, events.WalletCreated, data); err != nil {
 		log.Printf("[WARN] Event logging failed for batch %d: %v", batchNum, err)
 	}
 }

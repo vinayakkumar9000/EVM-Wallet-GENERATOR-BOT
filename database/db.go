@@ -2,13 +2,12 @@
 package database
 
 import (
-	"database/sql"
+	"context"
 	"fmt"
 	"log"
-	"strings"
 	"time"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"evmwalletbot/config"
 )
@@ -22,19 +21,20 @@ func EnsureDatabase(cfg *config.Config) error {
 	// Connect to the built-in "postgres" system DB — it always exists.
 	mainDSN := buildDSN(cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, "postgres", cfg.DBSSLMode)
 
-	db, err := sql.Open("postgres", mainDSN)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, mainDSN)
 	if err != nil {
 		return fmt.Errorf("open maintenance connection: %w", err)
 	}
-	defer db.Close()
+	defer pool.Close()
 
-	if err := db.Ping(); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("cannot reach PostgreSQL server (%s:%d): %w", cfg.DBHost, cfg.DBPort, err)
 	}
 
 	// Check whether our target database already exists.
 	var exists bool
-	err = db.QueryRow(
+	err = pool.QueryRow(ctx,
 		`SELECT EXISTS(SELECT 1 FROM pg_database WHERE datname = $1)`,
 		cfg.DBName,
 	).Scan(&exists)
@@ -50,7 +50,7 @@ func EnsureDatabase(cfg *config.Config) error {
 	// CREATE DATABASE must run outside any transaction block (PostgreSQL requirement).
 	// The double-quoted identifier handles DB names that contain upper-case or special chars.
 	log.Printf("[INFO] Database '%s' not found — creating it now...\n", cfg.DBName)
-	_, err = db.Exec(fmt.Sprintf(`CREATE DATABASE "%s"`, cfg.DBName))
+	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, cfg.DBName))
 	if err != nil {
 		return fmt.Errorf("create database '%s': %w", cfg.DBName, err)
 	}
@@ -61,50 +61,38 @@ func EnsureDatabase(cfg *config.Config) error {
 
 // Connect opens and validates a PostgreSQL connection pool to cfg.DBName.
 // Always call EnsureDatabase() first.
-func Connect(cfg *config.Config) (*sql.DB, error) {
-	db, err := sql.Open("postgres", cfg.DSN())
+func Connect(cfg *config.Config) (*pgxpool.Pool, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
 	if err != nil {
-		return nil, fmt.Errorf("sql.Open: %w", err)
+		return nil, fmt.Errorf("parse DSN: %w", err)
 	}
 
-	// Pool tuning for high-throughput batch inserts on Azure VPS.
-	db.SetMaxOpenConns(30)
-	db.SetMaxIdleConns(15)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	db.SetConnMaxIdleTime(2 * time.Minute)
+	// Pool tuning for high-throughput batch inserts.
+	// pgx defaults are good, but we tune for bulk operations.
+	poolConfig.MaxConns = 30
+	poolConfig.MinConns = 5
+	poolConfig.MaxConnLifetime = 5 * time.Minute
+	poolConfig.MaxConnIdleTime = 2 * time.Minute
+	poolConfig.HealthCheckPeriod = 1 * time.Minute
 
-	if err := db.Ping(); err != nil {
+	ctx := context.Background()
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create pool: %w", err)
+	}
+
+	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("ping '%s': %w", cfg.DBName, err)
 	}
 
-	return db, nil
+	return pool, nil
 }
 
-// buildDSN constructs a properly-quoted lib/pq keyword=value connection string.
-// Values that contain spaces, single-quotes, or backslashes are escaped correctly
-// so a complex password never corrupts the DSN.
+// buildDSN constructs a pgx connection string.
+// pgx uses standard PostgreSQL connection URIs or keyword=value format.
 func buildDSN(host string, port int, user, password, dbname, sslmode string) string {
 	return fmt.Sprintf(
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		host, port,
-		quoteDSNValue(user),
-		quoteDSNValue(password),
-		quoteDSNValue(dbname),
-		sslmode,
+		host, port, user, password, dbname, sslmode,
 	)
-}
-
-// quoteDSNValue wraps a DSN value in single quotes and escapes embedded
-// single-quotes and backslashes per the libpq connection string spec.
-func quoteDSNValue(v string) string {
-	if v == "" {
-		return "''"
-	}
-	// No special chars? Return bare value (most common case).
-	if !strings.ContainsAny(v, " '\\") {
-		return v
-	}
-	v = strings.ReplaceAll(v, `\`, `\\`)
-	v = strings.ReplaceAll(v, `'`, `\'`)
-	return "'" + v + "'"
 }

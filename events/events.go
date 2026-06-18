@@ -2,11 +2,11 @@
 package events
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"fmt"
 
-	"github.com/lib/pq"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // EventType is a string enum for event classification.
@@ -31,12 +31,14 @@ type RecentEvent struct {
 }
 
 // Log inserts a single event for one wallet.
-func Log(db *sql.DB, walletID int64, eventType EventType, data map[string]interface{}) error {
+func Log(pool *pgxpool.Pool, walletID int64, eventType EventType, data map[string]interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal event data: %w", err)
 	}
-	_, err = db.Exec(
+	
+	ctx := context.Background()
+	_, err = pool.Exec(ctx,
 		`INSERT INTO wallet_events (wallet_id, event_type, event_data) VALUES ($1, $2, $3)`,
 		walletID, string(eventType), jsonData,
 	)
@@ -44,20 +46,8 @@ func Log(db *sql.DB, walletID int64, eventType EventType, data map[string]interf
 }
 
 // LogBatch inserts one event row per wallet using PostgreSQL unnest().
-//
-// BUG FIX #2 — the original version built N×3 parameters (walletID, eventType,
-// jsonData per row).  For a 500-wallet batch that was 1500 parameters with the
-// same eventType and jsonData string repeated 500 times — wasted memory and
-// query parse overhead.
-//
-// The unnest approach uses exactly 3 parameters regardless of batch size:
-//   $1 = bigint[]   — array of wallet IDs (pq.Array handles the cast)
-//   $2 = text       — event type (same for all rows)
-//   $3 = jsonb text — event data (same for all rows)
-//
-// BUG FIX #6 — wrapped in an explicit transaction so a partial failure rolls
-// back the entire batch instead of leaving orphaned event rows.
-func LogBatch(db *sql.DB, walletIDs []int64, eventType EventType, data map[string]interface{}) error {
+// Uses exactly 3 parameters regardless of batch size for efficiency.
+func LogBatch(pool *pgxpool.Pool, walletIDs []int64, eventType EventType, data map[string]interface{}) error {
 	if len(walletIDs) == 0 {
 		return nil
 	}
@@ -67,27 +57,29 @@ func LogBatch(db *sql.DB, walletIDs []int64, eventType EventType, data map[strin
 		return fmt.Errorf("marshal event data: %w", err)
 	}
 
-	tx, err := db.Begin()
+	ctx := context.Background()
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin event tx: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(`
+	_, err = tx.Exec(ctx, `
 		INSERT INTO wallet_events (wallet_id, event_type, event_data)
 		SELECT unnest($1::bigint[]), $2, $3::jsonb
-	`, pq.Array(walletIDs), string(eventType), string(jsonData))
+	`, walletIDs, string(eventType), string(jsonData))
 
 	if err != nil {
 		return fmt.Errorf("batch event insert: %w", err)
 	}
 
-	return tx.Commit()
+	return tx.Commit(ctx)
 }
 
 // GetRecent returns the last `limit` events ordered newest-first.
-func GetRecent(db *sql.DB, limit int) ([]RecentEvent, error) {
-	rows, err := db.Query(`
+func GetRecent(pool *pgxpool.Pool, limit int) ([]RecentEvent, error) {
+	ctx := context.Background()
+	rows, err := pool.Query(ctx, `
 		SELECT
 			e.id,
 			e.wallet_id,
