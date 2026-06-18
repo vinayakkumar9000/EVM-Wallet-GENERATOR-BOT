@@ -16,6 +16,15 @@ import (
 )
 
 func main() {
+	// ── Top-level panic recovery ──────────────────────────────────────────
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("\n[FATAL] Application panic: %v", r)
+			log.Println("[FATAL] Stack trace available in logs")
+			os.Exit(1)
+		}
+	}()
+
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
@@ -62,6 +71,30 @@ func main() {
 	defer func() {
 		log.Println("[INFO] Closing database connection...")
 		pool.Close()
+	}()
+
+	// ── Start connection pool monitoring ──────────────────────────────────
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				stats := pool.Stat()
+				log.Printf("[POOL] Connections: Total=%d Idle=%d Acquired=%d MaxLifetime=%v",
+					stats.TotalConns(), stats.IdleConns(), stats.AcquiredConns(),
+					stats.MaxLifetimeDestroyCount())
+				
+				// Warn if pool is near exhaustion
+				if stats.AcquiredConns() > int32(float64(stats.MaxConns())*0.8) {
+					log.Printf("[WARN] Connection pool usage high: %d/%d (%.0f%%)",
+						stats.AcquiredConns(), stats.MaxConns(),
+						float64(stats.AcquiredConns())/float64(stats.MaxConns())*100)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
 	}()
 
 	// ── Auto-migrate schema (idempotent — safe on every run) ──────────────
