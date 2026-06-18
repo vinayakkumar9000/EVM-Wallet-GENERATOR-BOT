@@ -1,2 +1,0 @@
-{"id":"ee2c802a-a345-4506-a208-2bf9a6792ae4","ts":"2026-06-18T06:41:18.091Z","path":"D:\\bob\\evm wallet generator\\wallet\\generator.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"cd3a2c44-a056-4c3d-b793-4ad1e7484f40","ts":"2026-06-18T06:41:27.411Z","path":"D:\\bob\\evm wallet generator\\core\\generator.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
