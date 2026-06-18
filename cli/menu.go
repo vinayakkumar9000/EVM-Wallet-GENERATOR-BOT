@@ -19,8 +19,6 @@ import (
 	"evmwalletbot/events"
 )
 
-const walletBatchSize = 1000 // 1 user-facing batch = 1000 wallets
-
 // Run is the main entry point for the interactive CLI.
 func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	reader := bufio.NewReader(os.Stdin)
@@ -67,22 +65,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
 func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
-	fmt.Print(`
-  ┌──────────────────────────────────────┐
-  │          GENERATE WALLETS            │
-  │   1   Generate wallet batches        │
-  │   2   Back                           │
-  └──────────────────────────────────────┘
-  Select option: `)
-
-	switch strings.TrimSpace(readLine(reader)) {
-	case "1":
-		handleGenerate(ctx, pool, cfg, reader)
-	case "2":
-		return
-	default:
-		fmt.Println("\n[WARN] Invalid option — please choose 1 or 2.")
-	}
+	handleGenerate(ctx, pool, cfg, reader)
 }
 
 func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool) {
@@ -160,41 +143,106 @@ func handleHelpMenu() {
 }
 
 func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
-	fmt.Print("\n  Enter number of wallet batches (1 batch = 1000 wallets): ")
-	input := strings.TrimSpace(readLine(reader))
+	for {
+		fmt.Print(`
+  ┌────────────────────────────────────────────┐
+  │              GENERATE WALLETS              │
+  │   1   Generate by wallet count             │
+  │   2   Generate by batch count              │
+  │   3   Change generation settings           │
+  │   4   Preview current generation settings  │
+  │   5   Back                                 │
+  └────────────────────────────────────────────┘
+  Select option: `)
 
-	batches, err := strconv.Atoi(input)
-	if err != nil || batches < 1 {
+		switch strings.TrimSpace(readLine(reader)) {
+		case "1":
+			total, ok := promptPositiveInt(reader, "\n  Enter number of wallets to generate: ")
+			if ok {
+				generateWallets(ctx, pool, cfg, total)
+			}
+		case "2":
+			batches, ok := promptPositiveInt(reader, "\n  Enter number of batches: ")
+			if !ok {
+				continue
+			}
+
+			total, ok := generationTotal(batches, cfg.BatchSize)
+			if !ok {
+				fmt.Printf("\n[ERROR] Total wallets exceeds maximum safe value. Lower batches or batch size (%d).\n", cfg.BatchSize)
+				continue
+			}
+
+			fmt.Printf("\n[INFO] %d batches × %d wallets = %d wallets\n", batches, cfg.BatchSize, total)
+			generateWallets(ctx, pool, cfg, total)
+		case "3":
+			changeGenerationSettings(cfg, reader)
+		case "4":
+			previewGenerationSettings(cfg)
+		case "5":
+			return
+		default:
+			fmt.Println("\n[WARN] Invalid option — please choose 1 to 5.")
+		}
+	}
+}
+
+func promptPositiveInt(reader *bufio.Reader, prompt string) (int, bool) {
+	fmt.Print(prompt)
+	n, err := strconv.Atoi(strings.TrimSpace(readLine(reader)))
+	if err != nil || n < 1 {
 		fmt.Println("\n[ERROR] Please enter a positive integer (e.g. 1, 5, 100).")
+		return 0, false
+	}
+	return n, true
+}
+
+func generationTotal(batches, batchSize int) (int, bool) {
+	if batches < 1 || batchSize < 1 {
+		return 0, false
+	}
+	total := int64(batches) * int64(batchSize)
+	if total > int64(^uint(0)>>1) {
+		return 0, false
+	}
+	return int(total), true
+}
+
+func changeGenerationSettings(cfg *config.Config, reader *bufio.Reader) {
+	fmt.Printf("\n  Current batch size: %d wallets\n", cfg.BatchSize)
+	batchSize, ok := promptPositiveInt(reader, "  Enter new batch size (1-1000 wallets): ")
+	if !ok {
 		return
 	}
-
-	const maxBatches = 10_000
-	if batches > maxBatches {
-		fmt.Printf("\n[ERROR] Maximum is %d batches (%d wallets) per run.\n",
-			maxBatches, maxBatches*walletBatchSize)
-		fmt.Println("        Run the generator multiple times for larger totals.")
+	if batchSize > 1000 {
+		fmt.Println("\n[ERROR] Batch size cannot exceed 1000 (PostgreSQL parameter limit safety).")
 		return
 	}
+	cfg.BatchSize = batchSize
+	fmt.Printf("[INFO] Generation batch size set to %d wallets.\n", cfg.BatchSize)
+}
 
-	// ponytail: Prevent integer overflow on large wallet counts
-	totalInt64 := int64(batches) * int64(walletBatchSize)
-	if totalInt64 > 2147483647 { // Max int32
-		fmt.Printf("\n[ERROR] Total wallets (%d) exceeds maximum safe value.\n", totalInt64)
-		return
-	}
-	total := int(totalInt64)
+func previewGenerationSettings(cfg *config.Config) {
+	fmt.Printf(`
+  ┌──────────────────────────────────────┐
+  │       GENERATION SETTINGS            │
+  ├──────────────────────────────────────┤
+  │  Batch size : %-21d │
+  │  Workers    : %-21d │
+  └──────────────────────────────────────┘
+`, cfg.BatchSize, cfg.Workers)
+}
 
+func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, total int) {
 	fmt.Printf("\n[INFO] Starting wallet generation\n")
-	fmt.Printf("[INFO] Generating %d wallets (%d batch(es) of %d)\n",
-		total, batches, walletBatchSize)
+	fmt.Printf("[INFO] Generating %d wallets\n", total)
 
 	if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {
 		fmt.Printf("\n[ERROR] Generation failed: %v\n", err)
 		return
 	}
 
-	fmt.Printf("[INFO] Batch finished — all %d wallets stored successfully.\n\n", total)
+	fmt.Printf("[INFO] Generation finished — all %d wallets stored successfully.\n\n", total)
 }
 
 func handleStats(ctx context.Context, pool *pgxpool.Pool) {
