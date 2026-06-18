@@ -116,7 +116,7 @@ func main() {
 	log.Println("[INFO] Schema ready")
 
 	// ── Auto-display stats when wallets already exist ─────────────────────
-	s, err := core.GetStats(pool)
+	s, err := core.GetStats(ctx, pool)
 	if err == nil && s.TotalWallets > 0 {
 		log.Printf("[INFO] Existing database found — %d wallets loaded\n", s.TotalWallets)
 		core.PrintStats(s)

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strings"
+	"regexp"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,13 +49,15 @@ func EnsureDatabase(cfg *config.Config) error {
 	}
 
 	// CREATE DATABASE must run outside any transaction block (PostgreSQL requirement).
-	// The double-quoted identifier handles DB names that contain upper-case or special chars.
-	// ponytail: Sanitize database name to prevent SQL injection (replace quotes with empty string)
-	sanitizedName := sanitizeIdentifier(cfg.DBName)
-	log.Printf("[INFO] Database '%s' not found — creating it now...\n", sanitizedName)
-	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, sanitizedName))
+	// ponytail: Validate database name to prevent SQL injection and ensure PostgreSQL compliance
+	if err := validateDatabaseName(cfg.DBName); err != nil {
+		return fmt.Errorf("invalid database name: %w", err)
+	}
+	
+	log.Printf("[INFO] Database '%s' not found — creating it now...\n", cfg.DBName)
+	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, cfg.DBName))
 	if err != nil {
-		return fmt.Errorf("create database '%s': %w", sanitizedName, err)
+		return fmt.Errorf("create database '%s': %w", cfg.DBName, err)
 	}
 
 	log.Printf("[INFO] Database '%s' created successfully\n", cfg.DBName)
@@ -71,9 +73,9 @@ func Connect(cfg *config.Config) (*pgxpool.Pool, error) {
 	}
 
 	// Pool tuning for high-throughput batch inserts.
-	// pgx defaults are good, but we tune for bulk operations.
-	poolConfig.MaxConns = 30
-	poolConfig.MinConns = 5
+	// ponytail: Now configurable via DB_MAX_CONNS and DB_MIN_CONNS environment variables
+	poolConfig.MaxConns = int32(cfg.DBMaxConns)
+	poolConfig.MinConns = int32(cfg.DBMinConns)
 	poolConfig.MaxConnLifetime = 5 * time.Minute
 	poolConfig.MaxConnIdleTime = 2 * time.Minute
 	poolConfig.HealthCheckPeriod = 1 * time.Minute
@@ -100,13 +102,19 @@ func buildDSN(host string, port int, user, password, dbname, sslmode string) str
 	)
 }
 
-// sanitizeIdentifier removes quotes and other dangerous characters from database identifiers.
-// ponytail: Simple string replacement, no regex needed.
-func sanitizeIdentifier(name string) string {
-	// Remove quotes and semicolons that could break SQL
-	name = strings.ReplaceAll(name, `"`, "")
-	name = strings.ReplaceAll(name, `'`, "")
-	name = strings.ReplaceAll(name, `;`, "")
-	name = strings.ReplaceAll(name, `\`, "")
-	return name
+// validateDatabaseName ensures the database name follows PostgreSQL identifier rules.
+// ponytail: Strict validation prevents edge cases and improves error messages.
+// PostgreSQL identifiers: alphanumeric + underscore, max 63 chars, must start with letter/underscore.
+func validateDatabaseName(name string) error {
+	if len(name) == 0 {
+		return fmt.Errorf("database name cannot be empty")
+	}
+	if len(name) > 63 {
+		return fmt.Errorf("database name too long (max 63 chars): %s", name)
+	}
+	// PostgreSQL identifier rules: start with letter/underscore, then alphanumeric/underscore
+	if !regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`).MatchString(name) {
+		return fmt.Errorf("invalid database name '%s': must start with letter/underscore and contain only letters, numbers, and underscores", name)
+	}
+	return nil
 }

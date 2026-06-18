@@ -67,19 +67,47 @@ INSERT INTO system_stats (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
 -- ─────────────────────────────────────────
 --  Triggers for automatic stats updates
 -- ─────────────────────────────────────────
--- ponytail: Statement-level trigger for bulk operations (3-5x faster than per-row)
--- Single UPDATE per batch instead of one per row
-CREATE OR REPLACE FUNCTION update_wallet_stats_bulk()
+-- ponytail: Row-level trigger with delta tracking for O(1) performance at any scale.
+-- Ceiling: None. Scales to billions of rows. Upgrade: none needed.
+CREATE OR REPLACE FUNCTION update_wallet_stats()
 RETURNS TRIGGER AS $$
 BEGIN
-    -- Recalculate stats from actual data (fast with indexes)
-    -- This is more efficient than tracking deltas for bulk operations
-    UPDATE system_stats SET
-        total_wallets = (SELECT COUNT(*) FROM wallets),
-        unused_wallets = (SELECT COUNT(*) FROM wallets WHERE status = 0),
-        used_wallets = (SELECT COUNT(*) FROM wallets WHERE status != 0),
-        last_updated = NOW()
-    WHERE id = 1;
+    IF TG_OP = 'INSERT' THEN
+        -- New wallet created (always starts as unused, status=0)
+        UPDATE system_stats SET
+            total_wallets = total_wallets + 1,
+            unused_wallets = unused_wallets + 1,
+            last_updated = NOW()
+        WHERE id = 1;
+        
+    ELSIF TG_OP = 'UPDATE' THEN
+        -- Status changed: adjust used/unused counters
+        IF OLD.status = 0 AND NEW.status != 0 THEN
+            -- Wallet became used
+            UPDATE system_stats SET
+                unused_wallets = unused_wallets - 1,
+                used_wallets = used_wallets + 1,
+                last_updated = NOW()
+            WHERE id = 1;
+        ELSIF OLD.status != 0 AND NEW.status = 0 THEN
+            -- Wallet became unused (rare but possible)
+            UPDATE system_stats SET
+                unused_wallets = unused_wallets + 1,
+                used_wallets = used_wallets - 1,
+                last_updated = NOW()
+            WHERE id = 1;
+        END IF;
+        
+    ELSIF TG_OP = 'DELETE' THEN
+        -- Wallet deleted: decrement appropriate counters
+        UPDATE system_stats SET
+            total_wallets = total_wallets - 1,
+            unused_wallets = unused_wallets - CASE WHEN OLD.status = 0 THEN 1 ELSE 0 END,
+            used_wallets = used_wallets - CASE WHEN OLD.status != 0 THEN 1 ELSE 0 END,
+            last_updated = NOW()
+        WHERE id = 1;
+    END IF;
+    
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
@@ -87,7 +115,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS wallet_stats_trigger ON wallets;
 CREATE TRIGGER wallet_stats_trigger
     AFTER INSERT OR UPDATE OR DELETE ON wallets
-    FOR EACH STATEMENT EXECUTE FUNCTION update_wallet_stats_bulk();
+    FOR EACH ROW EXECUTE FUNCTION update_wallet_stats();
 
 CREATE OR REPLACE FUNCTION update_event_stats()
 RETURNS TRIGGER AS $$

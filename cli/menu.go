@@ -124,7 +124,6 @@ func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
 		Status    int
 	}
 
-	ctx := context.Background()
 	var w walletRow
 	err = pool.QueryRow(ctx, `
 		SELECT id, address, created_at, status

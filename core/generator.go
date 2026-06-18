@@ -98,9 +98,9 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	var batchesCompleted atomic.Int64
 
 	// ── Parallel key-generation goroutines with backpressure ──────────────
-	// ponytail: Use bounded channel + semaphore to prevent memory explosion
+	// ponytail: Use bounded channel to prevent memory explosion
+	// Worker pool + buffered channel provides natural backpressure
 	walletCh := make(chan *wallet.Wallet, cfg.BatchSize*2)
-	sem := make(chan struct{}, workers) // Semaphore for backpressure
 
 	var genWG sync.WaitGroup
 	perWorker := totalWallets / workers
@@ -129,19 +129,15 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 				default:
 				}
 				
-				sem <- struct{}{} // Acquire semaphore
-				
 				// ponytail: Reuse wallet objects from pool to reduce GC pressure
 				w := walletPool.Get().(*wallet.Wallet)
 				if err := wallet.GenerateInto(w); err != nil {
 					log.Printf("[WARN] Key generation error (skipping): %v", err)
 					// DO NOT return corrupted object to pool
-					<-sem // Release semaphore
 					continue
 				}
 				
 				walletCh <- w
-				<-sem // Release semaphore after successful send
 			}
 		}(count, i)
 	}

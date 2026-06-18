@@ -17,6 +17,8 @@ type Config struct {
 	DBPassword    string
 	DBName        string
 	DBSSLMode     string
+	DBMaxConns    int  // ponytail: Configurable connection pool size
+	DBMinConns    int  // ponytail: Configurable minimum connections
 	Workers       int
 	BatchSize     int
 	LogLevel      string
@@ -48,6 +50,16 @@ func Load() (*Config, error) {
 
 	enableLogging := getEnv("ENABLE_LOGGING", "true") == "true"
 
+	maxConns, err := strconv.Atoi(getEnv("DB_MAX_CONNS", "30"))
+	if err != nil || maxConns < 1 {
+		maxConns = 30
+	}
+
+	minConns, err := strconv.Atoi(getEnv("DB_MIN_CONNS", "5"))
+	if err != nil || minConns < 1 {
+		minConns = 5
+	}
+
 	return &Config{
 		DBHost:        getEnv("DB_HOST", "localhost"),
 		DBPort:        port,
@@ -55,6 +67,8 @@ func Load() (*Config, error) {
 		DBPassword:    getEnv("DB_PASSWORD", ""),
 		DBName:        getEnv("DB_NAME", "walletdb"),
 		DBSSLMode:     getEnv("DB_SSLMODE", "disable"),
+		DBMaxConns:    maxConns,
+		DBMinConns:    minConns,
 		Workers:       workers,
 		BatchSize:     batchSize,
 		LogLevel:      getEnv("LOG_LEVEL", "info"),
