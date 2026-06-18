@@ -41,13 +41,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── Ensure database exists before connecting ──────────────────────────
-	log.Println("[INFO] Ensuring database exists...")
-	if err := database.EnsureDatabase(cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "[ERROR] Database setup failed: %v\n", err)
-		os.Exit(1)
-	}
-
 	// ── Create context for graceful shutdown ──────────────────────────────
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -75,9 +68,16 @@ func main() {
 		}
 	}()
 
+	// ── Ensure database exists before connecting ──────────────────────────
+	log.Println("[INFO] Ensuring database exists...")
+	if err := database.EnsureDatabase(ctx, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "[ERROR] Database setup failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// ── Connect to PostgreSQL ─────────────────────────────────────────────
 	log.Println("[INFO] Connecting to database...")
-	pool, err := database.Connect(cfg)
+	pool, err := database.Connect(ctx, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr,
 			"[ERROR] Cannot connect to PostgreSQL: %v\n"+

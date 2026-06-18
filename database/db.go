@@ -20,16 +20,19 @@ const (
 	HealthCheckPeriod = 1 * time.Minute
 )
 
+// ponytail: Compile regex once at package initialization for better performance
+var dbNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+
 // EnsureDatabase connects to the always-existing "postgres" maintenance database,
 // checks whether the target database (cfg.DBName) exists, and creates it if not.
 //
 // This must be called BEFORE Connect() so the program never crashes on first run
 // with "database does not exist".
-func EnsureDatabase(cfg *config.Config) error {
+// ponytail: Now accepts context for timeout/cancellation control
+func EnsureDatabase(ctx context.Context, cfg *config.Config) error {
 	// Connect to the built-in "postgres" system DB — it always exists.
 	mainDSN := buildDSN(cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, "postgres", cfg.DBSSLMode)
 
-	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, mainDSN)
 	if err != nil {
 		return fmt.Errorf("open maintenance connection: %w", err)
@@ -73,7 +76,8 @@ func EnsureDatabase(cfg *config.Config) error {
 
 // Connect opens and validates a PostgreSQL connection pool to cfg.DBName.
 // Always call EnsureDatabase() first.
-func Connect(cfg *config.Config) (*pgxpool.Pool, error) {
+// ponytail: Now accepts context for timeout/cancellation control
+func Connect(ctx context.Context, cfg *config.Config) (*pgxpool.Pool, error) {
 	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
 	if err != nil {
 		return nil, fmt.Errorf("parse DSN: %w", err)
@@ -87,7 +91,6 @@ func Connect(cfg *config.Config) (*pgxpool.Pool, error) {
 	poolConfig.MaxConnIdleTime = MaxConnIdleTime
 	poolConfig.HealthCheckPeriod = HealthCheckPeriod
 
-	ctx := context.Background()
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, fmt.Errorf("create pool: %w", err)
@@ -120,7 +123,7 @@ func validateDatabaseName(name string) error {
 		return fmt.Errorf("database name too long (max 63 chars): %s", name)
 	}
 	// PostgreSQL identifier rules: start with letter/underscore, then alphanumeric/underscore
-	if !regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`).MatchString(name) {
+	if !dbNameRegex.MatchString(name) {
 		return fmt.Errorf("invalid database name '%s': must start with letter/underscore and contain only letters, numbers, and underscores", name)
 	}
 	return nil

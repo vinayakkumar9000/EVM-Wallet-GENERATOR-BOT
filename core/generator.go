@@ -172,11 +172,12 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 				return err
 			})
 			
-			if retryErr != nil {
-				close(progressDone)
-				return fmt.Errorf("DB insert (batch %d) failed after retries: %w", batchNum, retryErr)
-			}
-
+					if retryErr != nil {
+						close(progressDone)
+						cancel() // Cancel context to stop workers
+						genWG.Wait() // Wait for all workers to finish
+						return fmt.Errorf("DB insert (batch %d) failed after retries: %w", batchNum, retryErr)
+					}
 			confirmedCount.Add(int64(len(ids)))
 			batchesCompleted.Add(1)
 			
@@ -212,11 +213,12 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			return err
 		})
 		
-		if retryErr != nil {
-			close(progressDone)
-			return fmt.Errorf("DB insert (final batch) failed after retries: %w", retryErr)
-		}
-
+			if retryErr != nil {
+				close(progressDone)
+				cancel() // Cancel context to stop workers
+				genWG.Wait() // Wait for all workers to finish
+				return fmt.Errorf("DB insert (final batch) failed after retries: %w", retryErr)
+			}
 		confirmedCount.Add(int64(len(ids)))
 		batchesCompleted.Add(1)
 		

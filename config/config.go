@@ -74,7 +74,7 @@ func Load() (*Config, error) {
 		}
 	}
 
-	return &Config{
+	cfg := &Config{
 		DBHost:               getEnv("DB_HOST", "localhost"),
 		DBPort:               port,
 		DBUser:               getEnv("DB_USER", "postgres"),
@@ -89,7 +89,64 @@ func Load() (*Config, error) {
 		EnableLogging:        enableLogging,
 		PoolMonitorInterval:  poolMonitorInterval,
 		PoolWarningThreshold: poolWarningThreshold,
-	}, nil
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	return cfg, nil
+}
+
+// Validate checks configuration for invalid values and constraint violations.
+// ponytail: Fail fast on invalid config rather than runtime errors.
+func (c *Config) Validate() error {
+	// Database connection pool constraints
+	if c.DBMinConns > c.DBMaxConns {
+		return fmt.Errorf("DB_MIN_CONNS (%d) cannot exceed DB_MAX_CONNS (%d)", c.DBMinConns, c.DBMaxConns)
+	}
+	if c.DBMaxConns < 1 {
+		return fmt.Errorf("DB_MAX_CONNS must be at least 1, got %d", c.DBMaxConns)
+	}
+	if c.DBMinConns < 0 {
+		return fmt.Errorf("DB_MIN_CONNS cannot be negative, got %d", c.DBMinConns)
+	}
+
+	// Worker and batch size constraints
+	if c.Workers < 1 {
+		return fmt.Errorf("WORKERS must be at least 1, got %d", c.Workers)
+	}
+	if c.BatchSize < 1 {
+		return fmt.Errorf("BATCH_SIZE must be at least 1, got %d", c.BatchSize)
+	}
+	if c.BatchSize > 1000 {
+		return fmt.Errorf("BATCH_SIZE cannot exceed 1000 (PostgreSQL limit), got %d", c.BatchSize)
+	}
+
+	// Pool monitoring constraints
+	if c.PoolMonitorInterval < 0 {
+		return fmt.Errorf("POOL_MONITOR_INTERVAL cannot be negative, got %d", c.PoolMonitorInterval)
+	}
+	if c.PoolWarningThreshold <= 0 || c.PoolWarningThreshold > 1.0 {
+		return fmt.Errorf("POOL_WARNING_THRESHOLD must be between 0.0 and 1.0, got %f", c.PoolWarningThreshold)
+	}
+
+	// Database connection constraints
+	if c.DBPort < 1 || c.DBPort > 65535 {
+		return fmt.Errorf("DB_PORT must be between 1 and 65535, got %d", c.DBPort)
+	}
+	if c.DBHost == "" {
+		return fmt.Errorf("DB_HOST cannot be empty")
+	}
+	if c.DBUser == "" {
+		return fmt.Errorf("DB_USER cannot be empty")
+	}
+	if c.DBName == "" {
+		return fmt.Errorf("DB_NAME cannot be empty")
+	}
+
+	return nil
 }
 
 // DSN returns a PostgreSQL connection string (lib/pq format).
