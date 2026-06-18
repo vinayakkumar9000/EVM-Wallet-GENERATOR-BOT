@@ -137,7 +137,14 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 					continue
 				}
 				
-				walletCh <- w
+				// Send with context cancellation check to prevent blocking during shutdown
+			select {
+			case walletCh <- w:
+				// Successfully sent
+			case <-ctx.Done():
+				log.Printf("[INFO] Worker %d stopping during send (context cancelled)", workerID)
+				return
+			}
 			}
 		}(count, i)
 	}
@@ -178,12 +185,19 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 				log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
 			}
 
-			// ponytail: Return wallet objects to pool for reuse.
-			for _, w := range batch {
-				walletPool.Put(w)
-			}
-			batch = batch[:0]
-		}
+					// ponytail: Return wallet objects to pool for reuse.
+					// Reset wallet data before returning to pool to prevent data leakage
+					for _, w := range batch {
+						// Clear sensitive data
+						for i := range w.Address {
+							w.Address[i] = 0
+						}
+						for i := range w.PrivateKey {
+							w.PrivateKey[i] = 0
+						}
+						walletPool.Put(w)
+					}
+					batch = batch[:0]		}
 	}
 
 	// ── Flush remainder ───────────────────────────────────────────────────
@@ -211,10 +225,17 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
 		}
 
-		for _, w := range batch {
-			walletPool.Put(w)
-		}
-	}
+			// Reset wallet data before returning to pool to prevent data leakage
+			for _, w := range batch {
+				// Clear sensitive data
+				for i := range w.Address {
+					w.Address[i] = 0
+				}
+				for i := range w.PrivateKey {
+					w.PrivateKey[i] = 0
+				}
+				walletPool.Put(w)
+			}	}
 
 	close(progressDone)
 	time.Sleep(BatchProcessDelay)

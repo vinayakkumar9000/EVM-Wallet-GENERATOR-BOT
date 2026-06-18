@@ -90,28 +90,38 @@ func main() {
 	}()
 
 	// ── Start connection pool monitoring ──────────────────────────────────
-	go func() {
-		ticker := time.NewTicker(PoolMonitorInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				stats := pool.Stat()
-				log.Printf("[POOL] Connections: Total=%d Idle=%d Acquired=%d MaxLifetime=%v",
-					stats.TotalConns(), stats.IdleConns(), stats.AcquiredConns(),
-					stats.MaxLifetimeDestroyCount())
-				
-				// Warn if pool is near exhaustion
-				if stats.AcquiredConns() > int32(float64(stats.MaxConns())*0.8) {
-					log.Printf("[WARN] Connection pool usage high: %d/%d (%.0f%%)",
-						stats.AcquiredConns(), stats.MaxConns(),
-						float64(stats.AcquiredConns())/float64(stats.MaxConns())*100)
+	// ponytail: Configurable monitoring interval and warning threshold
+	if cfg.PoolMonitorInterval > 0 {
+		go func() {
+			ticker := time.NewTicker(time.Duration(cfg.PoolMonitorInterval) * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					stats := pool.Stat()
+					// Only log routine pool stats if logging is enabled
+					if cfg.EnableLogging {
+						log.Printf("[POOL] Connections: Total=%d Idle=%d Acquired=%d MaxLifetime=%v",
+							stats.TotalConns(), stats.IdleConns(), stats.AcquiredConns(),
+							stats.MaxLifetimeDestroyCount())
+					}
+					
+					// Always warn if pool is near exhaustion (important for operations)
+					threshold := cfg.PoolWarningThreshold
+					if threshold <= 0 || threshold > 1.0 {
+						threshold = 0.8 // Fallback to default
+					}
+					if stats.AcquiredConns() > int32(float64(stats.MaxConns())*threshold) {
+						log.Printf("[WARN] Connection pool usage high: %d/%d (%.0f%%)",
+							stats.AcquiredConns(), stats.MaxConns(),
+							float64(stats.AcquiredConns())/float64(stats.MaxConns())*100)
+					}
+				case <-ctx.Done():
+					return
 				}
-			case <-ctx.Done():
-				return
 			}
-		}
-	}()
+		}()
+	}
 
 	// ── Auto-migrate schema (idempotent — safe on every run) ──────────────
 	log.Println("[INFO] Verifying database schema...")

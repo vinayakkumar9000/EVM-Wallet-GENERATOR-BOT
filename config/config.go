@@ -21,8 +21,10 @@ type Config struct {
 	DBMinConns    int  // ponytail: Configurable minimum connections
 	Workers       int
 	BatchSize     int
-	LogLevel      string
-	EnableLogging bool // ponytail: Optional logging, reduces I/O overhead
+	LogLevel              string
+	EnableLogging         bool    // ponytail: Optional logging, reduces I/O overhead
+	PoolMonitorInterval   int     // ponytail: Pool monitoring interval in seconds (0 to disable)
+	PoolWarningThreshold  float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
@@ -60,19 +62,33 @@ func Load() (*Config, error) {
 		minConns = 5
 	}
 
+	poolMonitorInterval, err := strconv.Atoi(getEnv("POOL_MONITOR_INTERVAL", "30"))
+	if err != nil || poolMonitorInterval < 0 {
+		poolMonitorInterval = 30
+	}
+
+	poolWarningThreshold := 0.8
+	if thresholdStr := getEnv("POOL_WARNING_THRESHOLD", "0.8"); thresholdStr != "" {
+		if parsed, err := strconv.ParseFloat(thresholdStr, 64); err == nil && parsed > 0 && parsed <= 1.0 {
+			poolWarningThreshold = parsed
+		}
+	}
+
 	return &Config{
-		DBHost:        getEnv("DB_HOST", "localhost"),
-		DBPort:        port,
-		DBUser:        getEnv("DB_USER", "postgres"),
-		DBPassword:    getEnv("DB_PASSWORD", ""),
-		DBName:        getEnv("DB_NAME", "walletdb"),
-		DBSSLMode:     getEnv("DB_SSLMODE", "disable"),
-		DBMaxConns:    maxConns,
-		DBMinConns:    minConns,
-		Workers:       workers,
-		BatchSize:     batchSize,
-		LogLevel:      getEnv("LOG_LEVEL", "info"),
-		EnableLogging: enableLogging,
+		DBHost:               getEnv("DB_HOST", "localhost"),
+		DBPort:               port,
+		DBUser:               getEnv("DB_USER", "postgres"),
+		DBPassword:           getEnv("DB_PASSWORD", ""),
+		DBName:               getEnv("DB_NAME", "walletdb"),
+		DBSSLMode:            getEnv("DB_SSLMODE", "disable"),
+		DBMaxConns:           maxConns,
+		DBMinConns:           minConns,
+		Workers:              workers,
+		BatchSize:            batchSize,
+		LogLevel:             getEnv("LOG_LEVEL", "info"),
+		EnableLogging:        enableLogging,
+		PoolMonitorInterval:  poolMonitorInterval,
+		PoolWarningThreshold: poolWarningThreshold,
 	}, nil
 }
 
