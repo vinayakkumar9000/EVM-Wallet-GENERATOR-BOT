@@ -30,9 +30,18 @@ var walletPool = sync.Pool{
 }
 
 // init pre-warms the wallet pool with objects to reduce initial allocation spike.
-// ponytail: Pre-allocate 1000 objects for smoother startup performance.
+// ponytail: Dynamic warmup based on CPU cores (runtime.NumCPU() * 32).
+// Ceiling: 1000 objects max. Upgrade: make configurable if needed.
 func init() {
-	for i := 0; i < 1000; i++ {
+	warmupSize := runtime.NumCPU() * 32
+	if warmupSize > 1000 {
+		warmupSize = 1000
+	}
+	if warmupSize < 100 {
+		warmupSize = 100 // Minimum warmup
+	}
+	
+	for i := 0; i < warmupSize; i++ {
 		walletPool.Put(&wallet.Wallet{
 			Address:    make([]byte, 20),
 			PrivateKey: make([]byte, 32),
@@ -85,7 +94,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	}()
 
 	// ── Batch event tracking (simplified from per-wallet events) ──────────
-	// ponytail: Batch-level events instead of per-wallet reduces DB size by 10x
+	// ponytail: Batch-level logging instead of per-wallet events
 	var batchesCompleted atomic.Int64
 
 	// ── Parallel key-generation goroutines with backpressure ──────────────
@@ -223,12 +232,18 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 func printProgress(done, total int) {
 	const barWidth = 28
 
+	// ponytail: Prevent division by zero
 	pct := 0.0
 	if total > 0 {
 		pct = float64(done) / float64(total) * 100
 		if pct > 100 {
 			pct = 100
 		}
+	}
+	
+	// Prevent negative percentages
+	if pct < 0 {
+		pct = 0
 	}
 
 	filled := int(pct / 100 * barWidth)

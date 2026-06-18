@@ -16,7 +16,7 @@ const schema = `
 CREATE TABLE IF NOT EXISTS wallets (
     id          BIGSERIAL    PRIMARY KEY,
     address     BYTEA        NOT NULL UNIQUE,   -- 20 bytes (UNIQUE: DB enforces no duplicate addresses)
-    private_key BYTEA        NOT NULL UNIQUE,   -- 32 bytes (UNIQUE: DB enforces no duplicate keys)
+    private_key BYTEA        NOT NULL,          -- 32 bytes (collision probability: 1/2^256, essentially impossible)
     created_at  TIMESTAMPTZ  DEFAULT NOW(),
     status      SMALLINT     DEFAULT 0,         -- 0=unused, 1=used, 2=reserved
     metadata    JSONB

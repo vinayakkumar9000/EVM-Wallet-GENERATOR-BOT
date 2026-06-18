@@ -46,14 +46,12 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		case "3":
 			handleWalletInfo(pool, reader)
 		case "4":
-			handleRecentEvents(pool)
-		case "5":
 			handleDatabaseHealth(pool)
-		case "6":
+		case "5":
 			fmt.Println("\n[INFO] Goodbye.\n")
 			return
 		default:
-			fmt.Println("\n[WARN] Invalid option — please choose 1 to 6.")
+			fmt.Println("\n[WARN] Invalid option — please choose 1 to 5.")
 		}
 	}
 }
@@ -78,7 +76,13 @@ func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 		return
 	}
 
-	total := batches * walletBatchSize
+	// ponytail: Prevent integer overflow on large wallet counts
+	totalInt64 := int64(batches) * int64(walletBatchSize)
+	if totalInt64 > 2147483647 { // Max int32
+		fmt.Printf("\n[ERROR] Total wallets (%d) exceeds maximum safe value.\n", totalInt64)
+		return
+	}
+	total := int(totalInt64)
 
 	fmt.Printf("\n[INFO] Starting wallet generation\n")
 	fmt.Printf("[INFO] Generating %d wallets (%d batch(es) of %d)\n",
@@ -159,34 +163,7 @@ func handleWalletInfo(pool *pgxpool.Pool, reader *bufio.Reader) {
 	)
 }
 
-func handleRecentEvents(pool *pgxpool.Pool) {
-	fmt.Println("\n[INFO] Fetching recent events...")
-
-	evList, err := events.GetRecent(pool, 20)
-	if err != nil {
-		fmt.Printf("[ERROR] Could not fetch events: %v\n", err)
-		return
-	}
-
-	if len(evList) == 0 {
-		fmt.Println("[INFO] No events recorded yet.")
-		return
-	}
-
-	fmt.Printf("\n  %-6s  %-10s  %-22s  %-20s  %s\n",
-		"ID", "WALLET_ID", "TYPE", "CREATED_AT", "DATA")
-	fmt.Println("  " + strings.Repeat("─", 88))
-
-	for _, ev := range evList {
-		data := ev.EventData
-		if len(data) > 36 {
-			data = data[:33] + "..."
-		}
-		fmt.Printf("  %-6d  %-10d  %-22s  %-20s  %s\n",
-			ev.ID, ev.WalletID, ev.EventType, ev.CreatedAt, data)
-	}
-	fmt.Println()
-}
+// handleRecentEvents removed - we now use batch-level logging instead of per-wallet events
 
 func handleDatabaseHealth(pool *pgxpool.Pool) {
 	if err := core.RunHealthCheck(pool); err != nil {
@@ -215,9 +192,8 @@ func printMenu() {
   │   1   Generate wallets               │
   │   2   Show statistics                │
   │   3   Show wallet info               │
-  │   4   Show recent events             │
-  │   5   Database health                │
-  │   6   Exit                           │
+  │   4   Database health                │
+  │   5   Exit                           │
   └──────────────────────────────────────┘
   Select option: `)
 }

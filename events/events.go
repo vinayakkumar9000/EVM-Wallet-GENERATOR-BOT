@@ -13,12 +13,9 @@ import (
 type EventType string
 
 const (
-	WalletCreated    EventType = "wallet_created"
-	BalanceReceived  EventType = "balance_received"
-	TransactionSent  EventType = "transaction_sent"
-	RotationComplete EventType = "rotation_complete"
-	FaucetClaim      EventType = "faucet_claim"
-	BalanceUpdated   EventType = "balance_updated"
+	WalletCreated EventType = "wallet_created"
+	// Removed unused event types: BalanceReceived, TransactionSent, 
+	// RotationComplete, FaucetClaim, BalanceUpdated
 )
 
 // RecentEvent is used for display queries.
