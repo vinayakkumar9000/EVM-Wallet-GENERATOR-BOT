@@ -23,9 +23,7 @@ type Stats struct {
 // GetStats queries statistics using cached counters for O(1) performance.
 // ponytail: Replaced COUNT(*) with cached system_stats table (instant vs seconds).
 // Ceiling: Stats lag by ~1ms (trigger execution time). Upgrade: none needed.
-func GetStats(pool *pgxpool.Pool) (*Stats, error) {
-	ctx := context.Background()
-	
+func GetStats(ctx context.Context, pool *pgxpool.Pool) (*Stats, error) {
 	s := &Stats{}
 
 	// O(1) lookup from cached stats table (updated via triggers)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -24,9 +25,7 @@ type HealthMetrics struct {
 
 // CollectHealthMetrics queries PostgreSQL system catalogs for table health data.
 // ponytail: Uses pg_stat_user_tables (stdlib PostgreSQL views, no new dependencies).
-func CollectHealthMetrics(pool *pgxpool.Pool) ([]HealthMetrics, error) {
-	ctx := context.Background()
-
+func CollectHealthMetrics(ctx context.Context, pool *pgxpool.Pool) ([]HealthMetrics, error) {
 	query := `
 		SELECT 
 			schemaname || '.' || relname AS table_name,
@@ -79,11 +78,15 @@ func CollectHealthMetrics(pool *pgxpool.Pool) ([]HealthMetrics, error) {
 }
 
 // RecordHealthMetrics saves health metrics to database_health table for historical tracking.
-func RecordHealthMetrics(pool *pgxpool.Pool, metrics []HealthMetrics) error {
-	ctx := context.Background()
+// ponytail: Uses pgx.Batch for bulk insert instead of one-at-a-time
+func RecordHealthMetrics(ctx context.Context, pool *pgxpool.Pool, metrics []HealthMetrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
 
+	batch := &pgx.Batch{}
 	for _, m := range metrics {
-		_, err := pool.Exec(ctx, `
+		batch.Queue(`
 			INSERT INTO database_health (
 				table_name, total_size, index_size, 
 				dead_tuples, live_tuples, 
@@ -92,9 +95,15 @@ func RecordHealthMetrics(pool *pgxpool.Pool, metrics []HealthMetrics) error {
 		`, m.TableName, m.TotalSize, m.IndexSize, 
 			m.DeadTuples, m.LiveTuples, 
 			m.LastVacuum, m.LastAutovacuum)
-		
+	}
+
+	br := pool.SendBatch(ctx, batch)
+	defer br.Close()
+
+	for i := 0; i < len(metrics); i++ {
+		_, err := br.Exec()
 		if err != nil {
-			return fmt.Errorf("record health metrics: %w", err)
+			return fmt.Errorf("record health metrics batch: %w", err)
 		}
 	}
 
@@ -177,10 +186,10 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 }
 
 // RunHealthCheck collects metrics, displays them, and records to database.
-func RunHealthCheck(pool *pgxpool.Pool) error {
+func RunHealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
 	log.Println("[INFO] Collecting database health metrics...")
 	
-	metrics, err := CollectHealthMetrics(pool)
+	metrics, err := CollectHealthMetrics(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("collect metrics: %w", err)
 	}
@@ -188,7 +197,7 @@ func RunHealthCheck(pool *pgxpool.Pool) error {
 	PrintHealthMetrics(metrics)
 
 	log.Println("[INFO] Recording metrics to database_health table...")
-	if err := RecordHealthMetrics(pool, metrics); err != nil {
+	if err := RecordHealthMetrics(ctx, pool, metrics); err != nil {
 		return fmt.Errorf("record metrics: %w", err)
 	}
 

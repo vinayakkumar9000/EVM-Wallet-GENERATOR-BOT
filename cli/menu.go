@@ -42,11 +42,11 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		case "1":
 			handleGenerate(ctx, pool, cfg, reader)
 		case "2":
-			handleStats(pool)
+			handleStats(ctx, pool)
 		case "3":
-			handleWalletInfo(pool, reader)
+			handleWalletInfo(ctx, pool, reader)
 		case "4":
-			handleDatabaseHealth(pool)
+			handleDatabaseHealth(ctx, pool)
 		case "5":
 			fmt.Println("\n[INFO] Goodbye.\n")
 			return
@@ -96,10 +96,10 @@ func handleGenerate(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config,
 	fmt.Printf("[INFO] Batch finished — all %d wallets stored successfully.\n\n", total)
 }
 
-func handleStats(pool *pgxpool.Pool) {
+func handleStats(ctx context.Context, pool *pgxpool.Pool) {
 	fmt.Println("\n[INFO] Loading statistics...")
 
-	s, err := core.GetStats(pool)
+	s, err := core.GetStats(ctx, pool)
 	if err != nil {
 		fmt.Printf("[ERROR] Could not load stats: %v\n", err)
 		return
@@ -107,7 +107,7 @@ func handleStats(pool *pgxpool.Pool) {
 	core.PrintStats(s)
 }
 
-func handleWalletInfo(pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
 	fmt.Print("\n  Enter wallet ID (numeric): ")
 	input := strings.TrimSpace(readLine(reader))
 
@@ -165,8 +165,8 @@ func handleWalletInfo(pool *pgxpool.Pool, reader *bufio.Reader) {
 
 // handleRecentEvents removed - we now use batch-level logging instead of per-wallet events
 
-func handleDatabaseHealth(pool *pgxpool.Pool) {
-	if err := core.RunHealthCheck(pool); err != nil {
+func handleDatabaseHealth(ctx context.Context, pool *pgxpool.Pool) {
+	if err := core.RunHealthCheck(ctx, pool); err != nil {
 		fmt.Printf("[ERROR] Health check failed: %v\n", err)
 	}
 }

@@ -28,13 +28,12 @@ type RecentEvent struct {
 }
 
 // Log inserts a single event for one wallet.
-func Log(pool *pgxpool.Pool, walletID int64, eventType EventType, data map[string]interface{}) error {
+func Log(ctx context.Context, pool *pgxpool.Pool, walletID int64, eventType EventType, data map[string]interface{}) error {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("marshal event data: %w", err)
 	}
 	
-	ctx := context.Background()
 	_, err = pool.Exec(ctx,
 		`INSERT INTO wallet_events (wallet_id, event_type, event_data) VALUES ($1, $2, $3)`,
 		walletID, string(eventType), jsonData,
@@ -44,7 +43,8 @@ func Log(pool *pgxpool.Pool, walletID int64, eventType EventType, data map[strin
 
 // LogBatch inserts one event row per wallet using PostgreSQL unnest().
 // Uses exactly 3 parameters regardless of batch size for efficiency.
-func LogBatch(pool *pgxpool.Pool, walletIDs []int64, eventType EventType, data map[string]interface{}) error {
+// ponytail: Removed transaction wrapper - single INSERT doesn't need it
+func LogBatch(ctx context.Context, pool *pgxpool.Pool, walletIDs []int64, eventType EventType, data map[string]interface{}) error {
 	if len(walletIDs) == 0 {
 		return nil
 	}
@@ -54,14 +54,7 @@ func LogBatch(pool *pgxpool.Pool, walletIDs []int64, eventType EventType, data m
 		return fmt.Errorf("marshal event data: %w", err)
 	}
 
-	ctx := context.Background()
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin event tx: %w", err)
-	}
-	defer tx.Rollback(ctx)
-
-	_, err = tx.Exec(ctx, `
+	_, err = pool.Exec(ctx, `
 		INSERT INTO wallet_events (wallet_id, event_type, event_data)
 		SELECT unnest($1::bigint[]), $2, $3::jsonb
 	`, walletIDs, string(eventType), string(jsonData))
@@ -70,12 +63,11 @@ func LogBatch(pool *pgxpool.Pool, walletIDs []int64, eventType EventType, data m
 		return fmt.Errorf("batch event insert: %w", err)
 	}
 
-	return tx.Commit(ctx)
+	return nil
 }
 
 // GetRecent returns the last `limit` events ordered newest-first.
-func GetRecent(pool *pgxpool.Pool, limit int) ([]RecentEvent, error) {
-	ctx := context.Background()
+func GetRecent(ctx context.Context, pool *pgxpool.Pool, limit int) ([]RecentEvent, error) {
 	rows, err := pool.Query(ctx, `
 		SELECT
 			e.id,
