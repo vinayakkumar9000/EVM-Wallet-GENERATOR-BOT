@@ -283,51 +283,269 @@ go build -ldflags="-s -w" -o evmwalletbot ./cmd
 
 ## Usage — Interactive Menu
 
+The EVM Wallet Manager features a comprehensive interactive menu system with organized submenus for all operations.
+
+### Main Menu
+
 ```
   ╔═══════════════════════════════════════════════════════╗
   ║         EVM  WALLET  MANAGER   v1.0                   ║
+  ║         Multi-chain  ·  PostgreSQL  ·  Go             ║
   ╚═══════════════════════════════════════════════════════╝
 
   ┌──────────────────────────────────────┐
   │   1   Generate wallets               │
-  │   2   Show statistics                │
-  │   3   Show wallet info               │
-  │   4   Show recent events             │
-  │   5   Exit                           │
+  │   2   Statistics                     │
+  │   3   Wallet lookup                  │
+  │   4   Database tools                 │
+  │   5   Monitoring                     │
+  │   6   Benchmark / tuning             │
+  │   7   Configuration                  │
+  │   8   Help                           │
+  │   9   Exit                           │
   └──────────────────────────────────────┘
 ```
 
-### Option 1 — Generate wallets
+### 1. Generate Wallets Submenu
+
+Generate wallets with preview and confirmation for large runs.
 
 ```
-Enter number of wallet batches (1 batch = 1000 wallets): 5
-
-[INFO] Generating 5000 wallets (5 batch(es) of 1000)
-
-  Updating progress: 3500     / 5000      [████████████████████░░░░░░░░]   70.0%
-
-[INFO] 5000 wallets successfully created in 2.14s  (2336 wallets/sec)
+  ┌────────────────────────────────────────────┐
+  │              GENERATE WALLETS              │
+  │   1   Generate by wallet count             │
+  │   2   Generate by batch count              │
+  │   3   Preview run settings                 │
+  │   4   Generation settings                  │
+  │   5   Back                                 │
+  └────────────────────────────────────────────┘
 ```
 
-The progress line **rewrites itself in-place** — no flooding.
+**Features:**
+- Generate exact number of wallets or by batch count
+- Preview shows workers, batch size, database, and logging status
+- Automatic confirmation prompt for runs >10,000 wallets
+- Real-time progress display with throughput metrics
 
-### Option 2 — Statistics
+**Example:**
+```
+Enter number of wallets to generate: 50000
+
+  ┌──────────────────────────────────────────────────────┐
+  │                  RUN PREVIEW                         │
+  ├──────────────────────────────────────────────────────┤
+  │  Wallets        : 50000                              │
+  │  Mode           : 100 batches × 500 wallets          │
+  │  Workers        : 16                                 │
+  │  Batch size     : 500                                │
+  │  Insert batches : 100                                │
+  │  Database       : walletdb                           │
+  │  Logging        : enabled                            │
+  └──────────────────────────────────────────────────────┘
+
+  ⚠️  Large generation run: 50000 wallets
+  Continue? [y/N]: y
+
+[INFO] Starting wallet generation
+[INFO] Generating 50000 wallets
+[INFO] Generation finished — all 50000 wallets stored successfully.
+```
+
+### 2. Statistics Submenu
+
+View wallet statistics with live watch mode and database size information.
 
 ```
-  ╔═════════════════════════════════════════════════╗
-  ║              WALLET STATISTICS                  ║
-  ╠═════════════════════════════════════════════════╣
-  ║  Total wallets            : 125000              ║
-  ║  Wallets created today    : 5000                ║
-  ║  Unused wallets           : 124500              ║
-  ║  Used wallets             : 500                 ║
-  ╠═════════════════════════════════════════════════╣
-  ║  Total events logged      : 125000              ║
-  ║  Database size            : 48.2 MB             ║
-  ╠═════════════════════════════════════════════════╣
-  ║  Last wallet created      : 2026-03-05 14:22:10 ║
-  ╚═════════════════════════════════════════════════╝
+  ┌────────────────────────────────────────────┐
+  │                STATISTICS                  │
+  │   1   Show current stats                   │
+  │   2   Watch stats live                     │
+  │   3   Database size                        │
+  │   4   Back                                 │
+  └────────────────────────────────────────────┘
 ```
+
+**Features:**
+- Current statistics snapshot
+- Live watch mode (auto-refresh every 5 seconds)
+- Database size breakdown (total, tables, indexes)
+- Press Enter to stop live watch
+
+### 3. Wallet Lookup Submenu
+
+Look up wallet details by ID or address.
+
+```
+  ┌────────────────────────────────────────────┐
+  │              WALLET LOOKUP                 │
+  │   1   Lookup by wallet ID                  │
+  │   2   Lookup by address                    │
+  │   3   Back                                 │
+  └────────────────────────────────────────────┘
+```
+
+### 4. Database Tools Submenu
+
+Comprehensive database management and monitoring.
+
+```
+  ┌────────────────────────────────────────────┐
+  │              DATABASE TOOLS                │
+  │   1   Health check                         │
+  │   2   Connection pool status               │
+  │   3   Record health snapshot               │
+  │   4   Maintenance recommendations          │
+  │   5   Back                                 │
+  └────────────────────────────────────────────┘
+```
+
+**Features:**
+- Database connectivity and health checks
+- Real-time connection pool statistics
+- Save health snapshots to timestamped files
+- Automated maintenance recommendations based on database size
+
+**Example - Pool Status:**
+```
+  ┌──────────────────────────────────────────────────────┐
+  │            CONNECTION POOL STATUS                    │
+  ├──────────────────────────────────────────────────────┤
+  │  Total connections    : 8                            │
+  │  Idle connections     : 5                            │
+  │  Acquired connections : 3                            │
+  │  Max connections      : 30                           │
+  │  Usage                : 10.0%                        │
+  └──────────────────────────────────────────────────────┘
+```
+
+### 5. Monitoring Submenu
+
+Real-time monitoring with live watch modes.
+
+```
+  ┌────────────────────────────────────────────┐
+  │               MONITORING                   │
+  │   1   Pool status (once)                   │
+  │   2   Watch pool status (live)             │
+  │   3   Watch wallet stats (live)            │
+  │   4   Set refresh interval (5s)            │
+  │   5   Back                                 │
+  └────────────────────────────────────────────┘
+```
+
+**Features:**
+- One-time pool status snapshot
+- Live watch modes with configurable refresh interval (1-60 seconds)
+- Auto-refresh with screen clearing for clean display
+- Press Enter to stop watching
+
+### 6. Benchmark / Tuning Submenu
+
+Performance testing and optimization tools.
+
+```
+  ┌────────────────────────────────────────────┐
+  │           BENCHMARK / TUNING               │
+  │   1   Estimate current settings            │
+  │   2   Run small benchmark (1000 wallets)   │
+  │   3   Compare worker counts                │
+  │   4   Compare batch sizes                  │
+  │   5   Back                                 │
+  └────────────────────────────────────────────┘
+```
+
+**Features:**
+- Estimate completion times for different run sizes
+- Run actual benchmarks to measure system performance
+- Compare different worker counts (4, 8, 16, 32)
+- Compare different batch sizes (100, 250, 500, 1000)
+- Get recommendations based on results
+
+**Example - Estimation:**
+```
+  ┌──────────────────────────────────────────────────────┐
+  │           PERFORMANCE ESTIMATION                     │
+  ├──────────────────────────────────────────────────────┤
+  │  Current settings:                                   │
+  │    Workers     : 16                                  │
+  │    Batch size  : 500                                 │
+  │    Estimated   : ~10000 wallets/second               │
+  └──────────────────────────────────────────────────────┘
+
+  Estimated completion times:
+    Small run (10,000)       : 1.0 seconds
+    Medium run (100,000)     : 10.0 seconds
+    Large run (1,000,000)    : 1.7 minutes
+    Very large run (10,000,000) : 16.7 minutes
+```
+
+### 7. Configuration Submenu
+
+Runtime configuration without editing .env file.
+
+```
+  ┌──────────────────────────────────────┐
+  │             CONFIGURATION            │
+  ├──────────────────────────────────────┤
+  │  Database       : walletdb           │
+  │  User           : postgres           │
+  │  Host           : localhost          │
+  │  Port           : 5432               │
+  │  Max conns      : 30                 │
+  │  Min conns      : 5                  │
+  │  Workers        : 16                 │
+  │  Batch size     : 500 wallets        │
+  │  Logging        : enabled            │
+  │  Pool monitor   : 30 s               │
+  │  Pool threshold : 0.80               │
+  ├──────────────────────────────────────┤
+  │   1   Show current settings          │
+  │   2   Workers                        │
+  │   3   Batch size                     │
+  │   4   Logging (enable/disable)       │
+  │   5   Pool monitor interval          │
+  │   6   Pool warning threshold         │
+  │   7   Reset session settings         │
+  │   8   Back                           │
+  └──────────────────────────────────────┘
+```
+
+**Features:**
+- Modify all runtime settings without restarting
+- Changes apply to current session only
+- Reset to .env defaults anytime
+- Input validation with helpful error messages
+- Recommended values shown for each setting
+
+**Configurable Settings:**
+- **Workers (1-100):** Parallel wallet generators, default 16
+- **Batch Size (1-1000):** Wallets per transaction, default 500
+- **Logging:** Enable/disable batch completion logs
+- **Pool Monitor Interval (0-300s):** Pool stats frequency, 0 to disable
+- **Pool Warning Threshold (0.1-1.0):** Connection usage alert level
+
+### 8. Help Submenu
+
+Comprehensive help system with topic-specific guides.
+
+```
+  ┌────────────────────────────────────────────┐
+  │                  HELP                      │
+  │   1   Generation modes                     │
+  │   2   Batch size guide                     │
+  │   3   Workers guide                        │
+  │   4   Database guide                       │
+  │   5   Settings guide                       │
+  │   6   Back                                 │
+  └────────────────────────────────────────────┘
+```
+
+**Features:**
+- Detailed explanations for each topic
+- Best practices and recommendations
+- Trade-offs and optimization tips
+- Examples and use cases
+- Press Enter to return to menu
 
 ---
 
