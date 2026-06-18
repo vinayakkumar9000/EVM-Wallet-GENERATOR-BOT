@@ -37,6 +37,7 @@ func Generate() (*Wallet, error) {
 // GenerateInto generates a new random EVM wallet into an existing Wallet object.
 // This allows reusing wallet objects from sync.Pool to reduce GC pressure.
 // ponytail: Reuse pattern for high-throughput generation (>1M wallets).
+// Uses copy() to reuse pre-allocated slices instead of allocating new ones.
 func GenerateInto(w *Wallet) error {
 	key, err := crypto.GenerateKey()
 	if err != nil {
@@ -46,8 +47,10 @@ func GenerateInto(w *Wallet) error {
 	address := crypto.PubkeyToAddress(key.PublicKey)
 	privBytes := crypto.FromECDSA(key)
 
-	w.Address = address.Bytes()
-	w.PrivateKey = privBytes
+	// Reuse existing slices instead of allocating new ones
+	// This is critical for sync.Pool effectiveness
+	copy(w.Address, address.Bytes())
+	copy(w.PrivateKey, privBytes)
 	return nil
 }
 

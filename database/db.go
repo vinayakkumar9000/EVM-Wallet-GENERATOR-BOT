@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -49,10 +50,12 @@ func EnsureDatabase(cfg *config.Config) error {
 
 	// CREATE DATABASE must run outside any transaction block (PostgreSQL requirement).
 	// The double-quoted identifier handles DB names that contain upper-case or special chars.
-	log.Printf("[INFO] Database '%s' not found — creating it now...\n", cfg.DBName)
-	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, cfg.DBName))
+	// ponytail: Sanitize database name to prevent SQL injection (replace quotes with empty string)
+	sanitizedName := sanitizeIdentifier(cfg.DBName)
+	log.Printf("[INFO] Database '%s' not found — creating it now...\n", sanitizedName)
+	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, sanitizedName))
 	if err != nil {
-		return fmt.Errorf("create database '%s': %w", cfg.DBName, err)
+		return fmt.Errorf("create database '%s': %w", sanitizedName, err)
 	}
 
 	log.Printf("[INFO] Database '%s' created successfully\n", cfg.DBName)
@@ -95,4 +98,15 @@ func buildDSN(host string, port int, user, password, dbname, sslmode string) str
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
 		host, port, user, password, dbname, sslmode,
 	)
+}
+
+// sanitizeIdentifier removes quotes and other dangerous characters from database identifiers.
+// ponytail: Simple string replacement, no regex needed.
+func sanitizeIdentifier(name string) string {
+	// Remove quotes and semicolons that could break SQL
+	name = strings.ReplaceAll(name, `"`, "")
+	name = strings.ReplaceAll(name, `'`, "")
+	name = strings.ReplaceAll(name, `;`, "")
+	name = strings.ReplaceAll(name, `\`, "")
+	return name
 }

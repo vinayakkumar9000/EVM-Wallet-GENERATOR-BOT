@@ -11,15 +11,16 @@ import (
 
 // Config holds all runtime configuration values.
 type Config struct {
-	DBHost     string
-	DBPort     int
-	DBUser     string
-	DBPassword string
-	DBName     string
-	DBSSLMode  string
-	Workers    int
-	BatchSize  int
-	LogLevel   string
+	DBHost       string
+	DBPort       int
+	DBUser       string
+	DBPassword   string
+	DBName       string
+	DBSSLMode    string
+	Workers      int
+	BatchSize    int
+	EventWorkers int
+	LogLevel     string
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
@@ -45,16 +46,22 @@ func Load() (*Config, error) {
 		batchSize = 1000 // PostgreSQL parameter limit safety
 	}
 
+	eventWorkers, err := strconv.Atoi(getEnv("EVENT_WORKERS", "4"))
+	if err != nil || eventWorkers < 1 {
+		eventWorkers = 4
+	}
+
 	return &Config{
-		DBHost:     getEnv("DB_HOST", "localhost"),
-		DBPort:     port,
-		DBUser:     getEnv("DB_USER", "postgres"),
-		DBPassword: getEnv("DB_PASSWORD", ""),
-		DBName:     getEnv("DB_NAME", "walletdb"),
-		DBSSLMode:  getEnv("DB_SSLMODE", "disable"),
-		Workers:    workers,
-		BatchSize:  batchSize,
-		LogLevel:   getEnv("LOG_LEVEL", "info"),
+		DBHost:       getEnv("DB_HOST", "localhost"),
+		DBPort:       port,
+		DBUser:       getEnv("DB_USER", "postgres"),
+		DBPassword:   getEnv("DB_PASSWORD", ""),
+		DBName:       getEnv("DB_NAME", "walletdb"),
+		DBSSLMode:    getEnv("DB_SSLMODE", "disable"),
+		Workers:      workers,
+		BatchSize:    batchSize,
+		EventWorkers: eventWorkers,
+		LogLevel:     getEnv("LOG_LEVEL", "info"),
 	}, nil
 }
 

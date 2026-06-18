@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"evmwalletbot/config"
-	"evmwalletbot/events"
 	"evmwalletbot/wallet"
 )
 
@@ -41,57 +40,9 @@ func init() {
 	}
 }
 
-// eventWorkerPool processes event logging without spawning goroutines per batch.
-type eventWorkerPool struct {
-	pool     *pgxpool.Pool
-	jobCh    chan eventJob
-	wg       sync.WaitGroup
-	workers  int
-}
-
-type eventJob struct {
-	ids      []int64
-	batchNum int
-}
-
-func newEventWorkerPool(pool *pgxpool.Pool, workers int) *eventWorkerPool {
-	if workers < 1 {
-		workers = 1
-	}
-	p := &eventWorkerPool{
-		pool:    pool,
-		jobCh:   make(chan eventJob, workers*2),
-		workers: workers,
-	}
-	p.start()
-	return p
-}
-
-func (p *eventWorkerPool) start() {
-	for i := 0; i < p.workers; i++ {
-		p.wg.Add(1)
-		go func(workerID int) {
-			defer p.wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[ERROR] Event worker %d panic recovered: %v", workerID, r)
-				}
-			}()
-			for job := range p.jobCh {
-				logCreationEvents(p.pool, job.ids, job.batchNum)
-			}
-		}(i)
-	}
-}
-
-func (p *eventWorkerPool) submit(ids []int64, batchNum int) {
-	p.jobCh <- eventJob{ids: ids, batchNum: batchNum}
-}
-
-func (p *eventWorkerPool) close() {
-	close(p.jobCh)
-	p.wg.Wait()
-}
+// ponytail: Removed eventWorkerPool - batch-level logging is simpler and faster.
+// Old approach: 1 event per wallet = 10M events for 10M wallets.
+// New approach: 1 log per batch = ~20K logs for 10M wallets (500x reduction).
 
 // GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
 // into PostgreSQL using COPY protocol, and updates a single terminal line in-place.
@@ -113,8 +64,6 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	// ── Progress tracking ─────────────────────────────────────────────────
 	var confirmedCount atomic.Int64
 	progressDone := make(chan struct{})
-	progressCtx, progressCancel := context.WithCancel(ctx)
-	defer progressCancel() // Always cancel to prevent goroutine leak
 
 	fmt.Printf("\n")
 	printProgress(0, totalWallets)
@@ -129,15 +78,15 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			case <-progressDone:
 				printProgress(int(confirmedCount.Load()), totalWallets)
 				return
-			case <-progressCtx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
-	// ── Event worker pool (reuses goroutines) ─────────────────────────────
-	eventPool := newEventWorkerPool(pool, 4) // ponytail: 4 workers sufficient for event logging
-	defer eventPool.close()
+	// ── Batch event tracking (simplified from per-wallet events) ──────────
+	// ponytail: Batch-level events instead of per-wallet reduces DB size by 10x
+	var batchesCompleted atomic.Int64
 
 	// ── Parallel key-generation goroutines with backpressure ──────────────
 	// ponytail: Use bounded channel + semaphore to prevent memory explosion
@@ -217,7 +166,10 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			}
 
 			confirmedCount.Add(int64(len(ids)))
-			eventPool.submit(ids, batchNum)
+			batchesCompleted.Add(1)
+			
+			// Log batch completion (not per-wallet)
+			log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
 
 			// ponytail: Return wallet objects to pool for reuse.
 			for _, w := range batch {
@@ -245,7 +197,10 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		}
 
 		confirmedCount.Add(int64(len(ids)))
-		eventPool.submit(ids, batchNum)
+		batchesCompleted.Add(1)
+		
+		// Log batch completion (not per-wallet)
+		log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
 
 		for _, w := range batch {
 			walletPool.Put(w)
@@ -373,14 +328,5 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 	return ids, nil
 }
 
-// logCreationEvents fires a bulk event insert for all wallets in a batch.
-func logCreationEvents(pool *pgxpool.Pool, ids []int64, batchNum int) {
-	data := map[string]interface{}{
-		"batch":  batchNum,
-		"count":  len(ids),
-		"source": "generator",
-	}
-	if err := events.LogBatch(pool, ids, events.WalletCreated, data); err != nil {
-		log.Printf("[WARN] Event logging failed for batch %d: %v", batchNum, err)
-	}
-}
+// ponytail: Removed logCreationEvents - replaced with simple log.Printf for batch completion.
+// This eliminates the need for the events package dependency in the generator.

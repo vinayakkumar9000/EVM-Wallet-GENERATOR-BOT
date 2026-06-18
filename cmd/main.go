@@ -49,6 +49,7 @@ func main() {
 	// ── Setup signal handling for graceful shutdown ───────────────────────
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	shutdownComplete := make(chan struct{})
 	
 	go func() {
 		sig := <-sigCh
@@ -56,7 +57,16 @@ func main() {
 		cancel() // Cancel context to stop all operations
 		time.Sleep(2 * time.Second) // Grace period for operations to complete
 		log.Println("[INFO] Shutdown complete")
-		os.Exit(0)
+		close(shutdownComplete)
+	}()
+	
+	defer func() {
+		select {
+		case <-shutdownComplete:
+			// Shutdown already handled by signal
+		default:
+			// Normal exit
+		}
 	}()
 
 	// ── Connect to PostgreSQL ─────────────────────────────────────────────
