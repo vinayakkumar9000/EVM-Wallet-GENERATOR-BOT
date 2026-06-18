@@ -177,8 +177,10 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			confirmedCount.Add(int64(len(ids)))
 			batchesCompleted.Add(1)
 			
-			// Log batch completion (not per-wallet)
-			log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
+			// Log batch completion (not per-wallet) - optional via config
+			if cfg.EnableLogging {
+				log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
+			}
 
 			// ponytail: Return wallet objects to pool for reuse.
 			for _, w := range batch {
@@ -208,8 +210,10 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		confirmedCount.Add(int64(len(ids)))
 		batchesCompleted.Add(1)
 		
-		// Log batch completion (not per-wallet)
-		log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
+		// Log batch completion (not per-wallet) - optional via config
+		if cfg.EnableLogging {
+			log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
+		}
 
 		for _, w := range batch {
 			walletPool.Put(w)

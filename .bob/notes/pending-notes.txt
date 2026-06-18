@@ -1,12 +1,5 @@
-{"id":"8c5b3000-db1e-4220-8e34-fbf85d0803be","ts":"2026-06-18T07:55:04.178Z","path":"D:\\bob\\evm wallet generator\\events\\events.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"56df3161-397c-40f8-b863-f14d922e48f0","ts":"2026-06-18T07:55:54.696Z","path":"D:\\bob\\evm wallet generator\\events\\events.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"1401baf8-e27a-478e-823f-1c4e59bdbff9","ts":"2026-06-18T07:56:00.095Z","path":"D:\\bob\\evm wallet generator\\events\\events.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"6eddf826-cd04-4300-a681-25b0c5412fc3","ts":"2026-06-18T07:56:11.898Z","path":"D:\\bob\\evm wallet generator\\core\\maintenance.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"d95dc351-599a-45ff-993a-5e244193885f","ts":"2026-06-18T07:56:21.238Z","path":"D:\\bob\\evm wallet generator\\core\\maintenance.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"d36f4033-966d-4e47-ace2-fe7720840bcd","ts":"2026-06-18T07:56:30.006Z","path":"D:\\bob\\evm wallet generator\\core\\maintenance.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"41212c5c-334c-4779-a856-62a539e11bb9","ts":"2026-06-18T07:56:38.470Z","path":"D:\\bob\\evm wallet generator\\core\\maintenance.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"1757bc95-a2ad-42ef-a5da-b6b680325342","ts":"2026-06-18T07:56:52.684Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"eb719088-8892-4571-ae0f-25905f817992","ts":"2026-06-18T07:56:58.464Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"a6faf0c2-287f-43ec-8a31-843b8c16f402","ts":"2026-06-18T07:57:05.713Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"f7b9807c-04b5-41d7-8355-9d0ce926072c","ts":"2026-06-18T07:57:13.457Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
-{"id":"a12b3b57-3317-48fb-a4f3-da4255370642","ts":"2026-06-18T07:57:27.046Z","path":"D:\\bob\\evm wallet generator\\core\\stats.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
+{"id":"ec6de2ab-18b4-4438-b3f4-cfffd982a857","ts":"2026-06-18T08:09:34.478Z","path":"D:\\bob\\evm wallet generator\\config\\config.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
+{"id":"8454c9e1-2b70-41b0-b570-7462ca74cc06","ts":"2026-06-18T08:09:44.511Z","path":"D:\\bob\\evm wallet generator\\config\\config.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
+{"id":"71708903-942b-490e-9f01-2fb363d8e100","ts":"2026-06-18T08:10:00.134Z","path":"D:\\bob\\evm wallet generator\\core\\generator.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
+{"id":"c6673a0a-2fbb-4bc7-9418-1a4e59138806","ts":"2026-06-18T08:10:06.565Z","path":"D:\\bob\\evm wallet generator\\core\\generator.go","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
+{"id":"1f66aa52-4853-4c85-8057-292114a8b325","ts":"2026-06-18T08:10:27.715Z","path":"D:\\bob\\evm wallet generator\\.env.example","version":"1.0.0","taskID":"34564e86-f83b-4fc2-b8a9-0c00da807e81"}
