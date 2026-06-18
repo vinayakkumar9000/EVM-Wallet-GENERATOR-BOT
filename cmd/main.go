@@ -15,6 +15,12 @@ import (
 	"evmwalletbot/database"
 )
 
+// ponytail: Application-level constants (avoid import cycle with core package)
+const (
+	ShutdownGracePeriod = 2 * time.Second
+	PoolMonitorInterval = 30 * time.Second
+)
+
 func main() {
 	// ── Top-level panic recovery ──────────────────────────────────────────
 	defer func() {
@@ -55,7 +61,7 @@ func main() {
 		sig := <-sigCh
 		log.Printf("\n[INFO] Received signal %v, initiating graceful shutdown...", sig)
 		cancel() // Cancel context to stop all operations
-		time.Sleep(2 * time.Second) // Grace period for operations to complete
+		time.Sleep(ShutdownGracePeriod) // Grace period for operations to complete
 		log.Println("[INFO] Shutdown complete")
 		close(shutdownComplete)
 	}()
@@ -85,7 +91,7 @@ func main() {
 
 	// ── Start connection pool monitoring ──────────────────────────────────
 	go func() {
-		ticker := time.NewTicker(30 * time.Second)
+		ticker := time.NewTicker(PoolMonitorInterval)
 		defer ticker.Stop()
 		for {
 			select {

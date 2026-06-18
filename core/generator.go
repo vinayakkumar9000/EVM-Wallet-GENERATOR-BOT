@@ -30,15 +30,15 @@ var walletPool = sync.Pool{
 }
 
 // init pre-warms the wallet pool with objects to reduce initial allocation spike.
-// ponytail: Dynamic warmup based on CPU cores (runtime.NumCPU() * 32).
-// Ceiling: 1000 objects max. Upgrade: make configurable if needed.
+// ponytail: Dynamic warmup based on CPU cores.
+// Ceiling: MaxPoolWarmup objects. Upgrade: make configurable if needed.
 func init() {
-	warmupSize := runtime.NumCPU() * 32
-	if warmupSize > 1000 {
-		warmupSize = 1000
+	warmupSize := runtime.NumCPU() * WarmupMultiplier
+	if warmupSize > MaxPoolWarmup {
+		warmupSize = MaxPoolWarmup
 	}
-	if warmupSize < 100 {
-		warmupSize = 100 // Minimum warmup
+	if warmupSize < MinPoolWarmup {
+		warmupSize = MinPoolWarmup
 	}
 	
 	for i := 0; i < warmupSize; i++ {
@@ -78,7 +78,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	printProgress(0, totalWallets)
 
 	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond)
+		ticker := time.NewTicker(ProgressUpdateInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -217,7 +217,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	}
 
 	close(progressDone)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(BatchProcessDelay)
 
 	done := int(confirmedCount.Load())
 	elapsed := time.Since(start)
@@ -267,7 +267,7 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 	}
 
 	// ponytail: Add timeout for long-running COPY operations
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
 	defer cancel()
 
 	tx, err := pool.Begin(ctx)

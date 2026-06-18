@@ -13,6 +13,13 @@ import (
 	"evmwalletbot/config"
 )
 
+// ponytail: Connection pool lifecycle constants (avoid import cycle with core package)
+const (
+	MaxConnLifetime   = 5 * time.Minute
+	MaxConnIdleTime   = 2 * time.Minute
+	HealthCheckPeriod = 1 * time.Minute
+)
+
 // EnsureDatabase connects to the always-existing "postgres" maintenance database,
 // checks whether the target database (cfg.DBName) exists, and creates it if not.
 //
@@ -76,9 +83,9 @@ func Connect(cfg *config.Config) (*pgxpool.Pool, error) {
 	// ponytail: Now configurable via DB_MAX_CONNS and DB_MIN_CONNS environment variables
 	poolConfig.MaxConns = int32(cfg.DBMaxConns)
 	poolConfig.MinConns = int32(cfg.DBMinConns)
-	poolConfig.MaxConnLifetime = 5 * time.Minute
-	poolConfig.MaxConnIdleTime = 2 * time.Minute
-	poolConfig.HealthCheckPeriod = 1 * time.Minute
+	poolConfig.MaxConnLifetime = MaxConnLifetime
+	poolConfig.MaxConnIdleTime = MaxConnIdleTime
+	poolConfig.HealthCheckPeriod = HealthCheckPeriod
 
 	ctx := context.Background()
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
