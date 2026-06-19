@@ -2,6 +2,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 
@@ -81,27 +82,48 @@ func Colorize(color, text string) string {
 }
 
 // Success returns green-colored text for success messages.
-func Success(text string) string {
-	return Colorize(Green, text)
+// Supports printf-style formatting when additional arguments are provided.
+func Success(format string, a ...any) string {
+	if len(a) == 0 {
+		return Colorize(Green, format)
+	}
+	return Colorize(Green, fmt.Sprintf(format, a...))
 }
 
 // Error returns red-colored text for error messages.
-func Error(text string) string {
-	return Colorize(Red, text)
+// Supports printf-style formatting when additional arguments are provided.
+func Error(format string, a ...any) string {
+	if len(a) == 0 {
+		return Colorize(Red, format)
+	}
+	return Colorize(Red, fmt.Sprintf(format, a...))
 }
 
 // Warning returns yellow-colored text for warning messages.
-func Warning(text string) string {
-	return Colorize(Yellow, text)
+// Supports printf-style formatting when additional arguments are provided.
+func Warning(format string, a ...any) string {
+	if len(a) == 0 {
+		return Colorize(Yellow, format)
+	}
+	return Colorize(Yellow, fmt.Sprintf(format, a...))
 }
 
 // Info returns cyan-colored text for info messages.
-func Info(text string) string {
-	return Colorize(Cyan, text)
+// Supports printf-style formatting when additional arguments are provided.
+func Info(format string, a ...any) string {
+	if len(a) == 0 {
+		return Colorize(Cyan, format)
+	}
+	return Colorize(Cyan, fmt.Sprintf(format, a...))
 }
 
 // Hint returns dim gray text for hints and secondary information.
-func Hint(text string) string {
+// Supports printf-style formatting when additional arguments are provided.
+func Hint(format string, a ...any) string {
+	text := format
+	if len(a) > 0 {
+		text = fmt.Sprintf(format, a...)
+	}
 	if !colorsEnabled {
 		return text
 	}
@@ -109,7 +131,12 @@ func Hint(text string) string {
 }
 
 // Highlight returns bold text for emphasis.
-func Highlight(text string) string {
+// Supports printf-style formatting when additional arguments are provided.
+func Highlight(format string, a ...any) string {
+	text := format
+	if len(a) > 0 {
+		text = fmt.Sprintf(format, a...)
+	}
 	if !colorsEnabled {
 		return text
 	}

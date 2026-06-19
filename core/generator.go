@@ -69,6 +69,23 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		workers = totalWallets
 	}
 
+	// Initialize exporter if enabled
+	var exporter *wallet.Exporter
+	var exportErr error
+	if cfg.ExportEnabled {
+		exporter, exportErr = wallet.NewExporter(*cfg)
+		if exportErr != nil {
+			log.Printf("[WARN] Failed to initialize exporter: %v (continuing without export)", exportErr)
+		} else {
+			defer func() {
+				if err := exporter.Close(); err != nil {
+					log.Printf("[ERROR] Failed to close exporter: %v", err)
+				}
+			}()
+			log.Printf("[INFO] Export enabled: mode=%s dir=%s", cfg.ExportMode, cfg.ExportDir)
+		}
+	}
+
 	log.Printf("[INFO] Generating %d wallets | workers=%d (auto-tuned) | DB chunk=%d\n",
 		totalWallets, workers, cfg.BatchSize)
 
@@ -184,6 +201,15 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			confirmedCount.Add(int64(len(ids)))
 			batchesCompleted.Add(1)
 
+			// Export wallets if exporter is enabled
+			if exporter != nil {
+				for _, w := range batch {
+					if err := exporter.Export(w.AddressHex(), "0x"+w.PrivateKeyHex()); err != nil {
+						log.Printf("[WARN] Export failed for wallet: %v", err)
+					}
+				}
+			}
+
 			// Log batch completion (not per-wallet) - optional via config
 			if cfg.EnableLogging {
 				log.Printf("[INFO] Batch %d complete: %d wallets inserted", batchNum, len(ids))
@@ -226,6 +252,15 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		confirmedCount.Add(int64(len(ids)))
 		batchesCompleted.Add(1)
 
+		// Export wallets if exporter is enabled
+		if exporter != nil {
+			for _, w := range batch {
+				if err := exporter.Export(w.AddressHex(), "0x"+w.PrivateKeyHex()); err != nil {
+					log.Printf("[WARN] Export failed for wallet: %v", err)
+				}
+			}
+		}
+
 		// Log batch completion (not per-wallet) - optional via config
 		if cfg.EnableLogging {
 			log.Printf("[INFO] Final batch %d complete: %d wallets inserted", batchNum, len(ids))
@@ -251,8 +286,22 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	elapsed := time.Since(start)
 	tracker.Finish(done)
 
+	// Flush exporter and get export count
+	var exportCount int
+	if exporter != nil {
+		if err := exporter.Flush(); err != nil {
+			log.Printf("[WARN] Failed to flush exporter: %v", err)
+		}
+		exportCount = exporter.Count()
+	}
+
 	log.Printf("[INFO] Generation complete: %d wallets in %v (%.2f wallets/sec)",
 		done, elapsed, float64(done)/elapsed.Seconds())
+
+	if exportCount > 0 {
+		log.Printf("[INFO] Export complete: %d wallets exported to %s (mode: %s)",
+			exportCount, cfg.ExportDir, cfg.ExportMode)
+	}
 
 	return nil
 }

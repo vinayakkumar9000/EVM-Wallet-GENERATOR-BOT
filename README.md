@@ -281,7 +281,37 @@ go build -ldflags="-s -w" -o evmwalletbot ./cmd
 
 ---
 
-## Usage — Interactive Menu
+## Usage
+
+### Non-Interactive Mode (CLI Flags)
+
+For automation and scripting, use command-line flags to generate wallets without the interactive menu:
+
+```bash
+# Show help
+./evmwalletbot --help
+
+# Show version
+./evmwalletbot --version
+
+# Generate 1000 wallets
+./evmwalletbot --count 1000
+
+# Generate with export to CSV
+./evmwalletbot --count 5000 --export-mode combined --export-dir ./output
+
+# Generate with paired export (address.txt + privatekey.txt)
+./evmwalletbot --count 10000 --export-mode paired --export-dir ./exports
+```
+
+**Available Flags:**
+- `--count N` — Generate N wallets and exit (non-interactive mode)
+- `--export-mode MODE` — Export mode: `paired`, `key-only`, `address-only`, `combined`
+- `--export-dir PATH` — Export directory path (default: `./exports`)
+- `--version` — Show version and exit
+- `--help` — Show help and exit
+
+### Interactive Menu
 
 The EVM Wallet Manager features a comprehensive interactive menu system with organized submenus for all operations.
 
@@ -580,6 +610,8 @@ Indexes: `wallet_id`, `event_type`, `created_at`
 
 ## Environment Variables
 
+### Core Configuration
+
 | Variable    | Default     | Description                           |
 |-------------|-------------|---------------------------------------|
 | DB_HOST     | localhost   | PostgreSQL hostname                   |
@@ -588,9 +620,49 @@ Indexes: `wallet_id`, `event_type`, `created_at`
 | DB_PASSWORD | (empty)     | Database password                     |
 | DB_NAME     | walletdb    | Database name                         |
 | DB_SSLMODE  | disable     | `disable` / `require` / `verify-full` |
+| DB_MAX_CONNS | 30         | Maximum connection pool size          |
+| DB_MIN_CONNS | 5          | Minimum idle connections              |
 | WORKERS     | 16          | Parallel key-generation goroutines    |
 | BATCH_SIZE  | 500         | Wallets per DB insert transaction     |
 | LOG_LEVEL   | info        | `info` / `warn` / `error`            |
+| ENABLE_LOGGING | true     | Enable batch completion logs          |
+
+### Export Configuration
+
+| Variable              | Default  | Description                                    |
+|-----------------------|----------|------------------------------------------------|
+| EXPORT_ENABLED        | false    | Enable plaintext file export                   |
+| EXPORT_MODE           | paired   | Export mode: `paired`, `key-only`, `address-only`, `combined` |
+| EXPORT_DIR            | ./exports | Output directory for export files             |
+| EXPORT_OVERWRITE      | false    | Overwrite existing files (false = append mode) |
+| EXPORT_ADDRESS_PREFIX | true     | Add 0x prefix to addresses                     |
+| EXPORT_KEY_PREFIX     | true     | Add 0x prefix to private keys                  |
+| EXPORT_USE_CHECKSUM   | true     | Use EIP-55 checksum for addresses              |
+
+**Export Modes:**
+- **paired**: Separate `address.txt` and `privatekey.txt` files with line-for-line correspondence
+- **key-only**: Only `privatekey.txt` (for importing to wallets)
+- **address-only**: Only `address.txt` (for monitoring/airdrops)
+- **combined**: Single `wallets.csv` with both columns (for spreadsheets)
+
+**Example Export Configuration:**
+```bash
+# Enable export with paired mode
+EXPORT_ENABLED=true
+EXPORT_MODE=paired
+EXPORT_DIR=./my_wallets
+EXPORT_OVERWRITE=false
+EXPORT_USE_CHECKSUM=true
+```
+
+### Monitoring Configuration
+
+| Variable              | Default | Description                                    |
+|-----------------------|---------|------------------------------------------------|
+| POOL_MONITOR_INTERVAL | 30      | Pool stats log interval in seconds (0 = disable) |
+| POOL_WARNING_THRESHOLD | 0.8    | Warn when pool usage exceeds this ratio (0.0-1.0) |
+| UI_MODE               | full    | Display mode: `full` or `minimal`              |
+| SHOW_FIRST_RUN_TIPS   | true    | Show tips on first run                         |
 
 ---
 
@@ -615,11 +687,29 @@ Indexes: `wallet_id`, `event_type`, `created_at`
 
 ## Security Notes
 
-- Private keys are **never printed to logs or terminal**.
+- Private keys are **never printed to logs or terminal** (except during export operations).
 - Private keys are stored as raw 32-byte `BYTEA` in PostgreSQL.
 - The PostgreSQL user created by `install.sh` has access **only to `walletdb`**.
 - Port 5432 is **not opened in UFW** — PostgreSQL accepts local connections only.
 - For production: enable PostgreSQL SSL (`DB_SSLMODE=require`) and restrict pg_hba.conf.
+
+### Export Security
+
+When using the export feature:
+- **Exported files contain plaintext private keys** — treat them as highly sensitive
+- Store export files in encrypted volumes or secure locations
+- Use `EXPORT_OVERWRITE=false` (append mode) to avoid accidental data loss
+- Delete export files immediately after importing to destination wallets
+- Never commit export files to version control (already in `.gitignore`)
+- Consider using `address-only` mode when private keys are not needed
+- Verify exported wallets using the built-in `VerifyExportedWallet` function
+
+**Recommended Export Workflow:**
+1. Generate wallets to database (secure storage)
+2. Export only when needed for specific operations
+3. Import to destination immediately
+4. Securely delete export files
+5. Verify import success before deleting database records
 
 ---
 

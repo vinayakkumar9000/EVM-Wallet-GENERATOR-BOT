@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -22,6 +23,39 @@ const (
 )
 
 func main() {
+	// ── Command-line flags for non-interactive mode ───────────────────────
+	var (
+		generateCount = flag.Int("count", 0, "Generate N wallets and exit (non-interactive mode)")
+		exportMode    = flag.String("export-mode", "", "Export mode: paired, key-only, address-only, combined")
+		exportDir     = flag.String("export-dir", "", "Export directory path")
+		showVersion   = flag.Bool("version", false, "Show version and exit")
+		showHelp      = flag.Bool("help", false, "Show help and exit")
+	)
+	flag.Parse()
+
+	// ── Show version ──────────────────────────────────────────────────────
+	if *showVersion {
+		fmt.Println("evmwalletbot v1.0.0")
+		os.Exit(0)
+	}
+
+	// ── Show help ─────────────────────────────────────────────────────────
+	if *showHelp {
+		fmt.Println("EVM Wallet Generator - Generate Ethereum-compatible wallets")
+		fmt.Println("\nUsage:")
+		fmt.Println("  evmwalletbot [flags]")
+		fmt.Println("\nFlags:")
+		flag.PrintDefaults()
+		fmt.Println("\nExamples:")
+		fmt.Println("  # Interactive mode (default)")
+		fmt.Println("  evmwalletbot")
+		fmt.Println("\n  # Generate 1000 wallets non-interactively")
+		fmt.Println("  evmwalletbot -count 1000")
+		fmt.Println("\n  # Generate and export to CSV")
+		fmt.Println("  evmwalletbot -count 1000 -export-mode combined -export-dir ./output")
+		os.Exit(0)
+	}
+
 	// ── Top-level panic recovery ──────────────────────────────────────────
 	defer func() {
 		if r := recover(); r != nil {
@@ -39,6 +73,15 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Config: %v\n", err)
 		os.Exit(1)
+	}
+
+	// ── Override config with CLI flags ────────────────────────────────────
+	if *exportMode != "" {
+		cfg.ExportEnabled = true
+		cfg.ExportMode = *exportMode
+	}
+	if *exportDir != "" {
+		cfg.ExportDir = *exportDir
 	}
 
 	// ── Create context for graceful shutdown ──────────────────────────────
@@ -136,6 +179,17 @@ func main() {
 	if err == nil && s.TotalWallets > 0 {
 		log.Printf("[INFO] Existing database found — %d wallets loaded\n", s.TotalWallets)
 		core.PrintStats(s)
+	}
+
+	// ── Non-interactive mode: generate and exit ───────────────────────────
+	if *generateCount > 0 {
+		log.Printf("[INFO] Non-interactive mode: generating %d wallets", *generateCount)
+		if err := core.GenerateWallets(ctx, pool, cfg, *generateCount); err != nil {
+			fmt.Fprintf(os.Stderr, "[ERROR] Generation failed: %v\n", err)
+			os.Exit(1)
+		}
+		log.Println("[INFO] Generation complete, exiting")
+		os.Exit(0)
 	}
 
 	// ── Launch interactive CLI ────────────────────────────────────────────

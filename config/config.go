@@ -27,7 +27,7 @@ type Config struct {
 	PoolWarningThreshold float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
 	UIMode               string  // ponytail: UI display mode - "full" or "minimal" (default: full)
 	ShowFirstRunTips     bool    // ponytail: Show tips on first run (default: true)
-	
+
 	// Export configuration
 	ExportEnabled       bool   // ponytail: Enable plaintext file export (default: false)
 	ExportMode          string // ponytail: Export mode - "paired", "key-only", "address-only", "combined" (default: paired)
