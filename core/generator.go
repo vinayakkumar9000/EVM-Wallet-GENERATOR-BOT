@@ -78,7 +78,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	progressDone := make(chan struct{})
 
 	fmt.Printf("\n")
-	printProgress(0, totalWallets)
+	tracker := NewProgressTracker(totalWallets)
 
 	go func() {
 		ticker := time.NewTicker(ProgressUpdateInterval)
@@ -86,9 +86,9 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		for {
 			select {
 			case <-ticker.C:
-				printProgress(int(confirmedCount.Load()), totalWallets)
+				tracker.Render(int(confirmedCount.Load()))
 			case <-progressDone:
-				printProgress(int(confirmedCount.Load()), totalWallets)
+				tracker.Render(int(confirmedCount.Load()))
 				return
 			case <-ctx.Done():
 				return
@@ -248,42 +248,9 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	time.Sleep(BatchProcessDelay)
 
 	done := int(confirmedCount.Load())
-	elapsed := time.Since(start)
-	rate := float64(done) / elapsed.Seconds()
-	fmt.Printf("\n\n[INFO] %d wallets successfully created in %.2fs  (%.0f wallets/sec)\n\n",
-		done, elapsed.Seconds(), rate)
+	tracker.Finish(done)
 
 	return nil
-}
-
-// printProgress rewrites the current terminal line in-place using \r.
-func printProgress(done, total int) {
-	const barWidth = 28
-
-	// ponytail: Prevent division by zero
-	pct := 0.0
-	if total > 0 {
-		pct = float64(done) / float64(total) * 100
-		if pct > 100 {
-			pct = 100
-		}
-	}
-
-	// Prevent negative percentages
-	if pct < 0 {
-		pct = 0
-	}
-
-	filled := int(pct / 100 * barWidth)
-	if filled > barWidth {
-		filled = barWidth
-	}
-	empty := barWidth - filled
-
-	bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
-
-	fmt.Printf("\r  Updating progress: %-8d / %-8d  [%s]  %5.1f%%   ",
-		done, total, bar, pct)
 }
 
 // insertWalletBatchCopy uses PostgreSQL COPY protocol for maximum throughput.

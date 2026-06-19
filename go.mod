@@ -6,6 +6,7 @@ require (
 	github.com/ethereum/go-ethereum v1.13.14
 	github.com/jackc/pgx/v5 v5.5.5
 	github.com/joho/godotenv v1.5.1
+	golang.org/x/term v0.16.0
 )
 
 require (
