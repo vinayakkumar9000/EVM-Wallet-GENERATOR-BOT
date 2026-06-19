@@ -1,4 +1,4 @@
-// Package wallet generates EVM-compatible wallets (secp256k1 + keccak160).
+// Package wallet generates EVM-compatible wallets (secp256k1 + keccak256).
 // Compatible with Ethereum, BSC, Polygon, Arbitrum, Optimism, Base, and any
 // EVM chain — they all share the same key derivation scheme.
 package wallet

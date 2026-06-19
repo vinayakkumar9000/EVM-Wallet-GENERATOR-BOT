@@ -312,14 +312,18 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		)
 	`)
 	if err != nil {
-		tx.Rollback(ctx)
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			log.Printf("[ERROR] Rollback failed after create staging table error: %v", rbErr)
+		}
 		return nil, fmt.Errorf("create staging table: %w", err)
 	}
 
 	// Truncate for reuse (faster than DROP/CREATE)
 	_, err = tx.Exec(ctx, `TRUNCATE wallet_staging_reusable`)
 	if err != nil {
-		tx.Rollback(ctx)
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			log.Printf("[ERROR] Rollback failed after truncate staging table error: %v", rbErr)
+		}
 		return nil, fmt.Errorf("truncate staging table: %w", err)
 	}
 
@@ -333,7 +337,9 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		}),
 	)
 	if err != nil {
-		tx.Rollback(ctx)
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			log.Printf("[ERROR] Rollback failed after copy data error: %v", rbErr)
+		}
 		return nil, fmt.Errorf("copy data: %w", err)
 	}
 
@@ -344,7 +350,9 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 		RETURNING id
 	`)
 	if err != nil {
-		tx.Rollback(ctx)
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			log.Printf("[ERROR] Rollback failed after insert from staging error: %v", rbErr)
+		}
 		return nil, fmt.Errorf("insert from staging: %w", err)
 	}
 	defer rows.Close()
@@ -353,13 +361,17 @@ func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int6
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			tx.Rollback(ctx)
+			if rbErr := tx.Rollback(ctx); rbErr != nil {
+				log.Printf("[ERROR] Rollback failed after scan id error: %v", rbErr)
+			}
 			return nil, fmt.Errorf("scan id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	if err := rows.Err(); err != nil {
-		tx.Rollback(ctx)
+		if rbErr := tx.Rollback(ctx); rbErr != nil {
+			log.Printf("[ERROR] Rollback failed after rows error: %v", rbErr)
+		}
 		return nil, err
 	}
 

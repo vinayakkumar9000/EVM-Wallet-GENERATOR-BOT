@@ -853,10 +853,6 @@ func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
 	}
 	defer file.Close()
 	
-	// Redirect output to file temporarily
-	oldStdout := os.Stdout
-	os.Stdout = file
-	
 	fmt.Fprintf(file, "EVM Wallet Manager - Health Snapshot\n")
 	fmt.Fprintf(file, "Generated: %s\n", time.Now().Format("2006-01-02 15:04:05 UTC"))
 	fmt.Fprintf(file, "========================================\n\n")
@@ -873,9 +869,6 @@ func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
 	fmt.Fprintf(file, "  Idle connections: %d\n", stat.IdleConns())
 	fmt.Fprintf(file, "  Acquired connections: %d\n", stat.AcquiredConns())
 	fmt.Fprintf(file, "  Max connections: %d\n", stat.MaxConns())
-	
-	// Restore stdout
-	os.Stdout = oldStdout
 	
 	fmt.Printf("\n[INFO] Health snapshot saved to: %s\n", filename)
 }
