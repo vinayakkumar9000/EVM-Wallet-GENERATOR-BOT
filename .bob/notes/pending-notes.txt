@@ -1,5 +1,2 @@
-{"id":"11bfc0ba-7d92-453d-9ea6-89ad90f82827","ts":"2026-06-19T06:28:25.459Z","path":"D:\\bob\\evm wallet generator\\core\\vanity.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
-{"id":"36ca0cff-7988-4a7c-9e49-1880fb2bf87b","ts":"2026-06-19T06:28:41.133Z","path":"D:\\bob\\evm wallet generator\\core\\vanity.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
-{"id":"cc5280a6-fef3-4382-92dc-45654d6a0792","ts":"2026-06-19T06:28:52.346Z","path":"D:\\bob\\evm wallet generator\\core\\generator.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
-{"id":"041018d3-ca47-4383-9c41-97c9b60585cf","ts":"2026-06-19T06:29:11.853Z","path":"D:\\bob\\evm wallet generator\\core\\generator.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
-{"id":"0767d6a4-1ed8-40d7-91d1-8fd35bb60eb8","ts":"2026-06-19T06:29:22.716Z","path":"D:\\bob\\evm wallet generator\\wallet\\vanity_test.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
+{"id":"64357245-7d4c-496f-b6c5-d259f6cef6d5","ts":"2026-06-19T06:45:15.105Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
+{"id":"d2d14989-0942-4f2a-904e-9edc037c3afb","ts":"2026-06-19T06:46:42.638Z","path":"D:\\bob\\evm wallet generator\\cli\\menu.go","version":"1.0.0","taskID":"b7fa9c94-1539-4f8a-91f0-85e8ec47678d"}
