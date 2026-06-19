@@ -56,17 +56,7 @@ func (s *StatusStrip) Render() {
 }
 
 // formatNumber formats an integer with thousand separators.
+// Uses the implementation from core package.
 func formatNumber(n int) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-	var result []byte
-	for i, c := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			result = append(result, ',')
-		}
-		result = append(result, byte(c))
-	}
-	return string(result)
+	return core.FormatNumber(n)
 }

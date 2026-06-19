@@ -162,7 +162,7 @@ func TestConfigDSN(t *testing.T) {
 
 	dsn := cfg.DSN()
 	expected := "host=localhost port=5432 user=testuser password=testpass dbname=testdb sslmode=disable"
-	
+
 	if dsn != expected {
 		t.Errorf("Config.DSN() = %q, want %q", dsn, expected)
 	}
@@ -171,7 +171,7 @@ func TestConfigDSN(t *testing.T) {
 // BenchmarkValidateDatabaseName measures validation performance
 func BenchmarkValidateDatabaseName(b *testing.B) {
 	validName := "wallet_db_123"
-	
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = validateDatabaseName(validName)

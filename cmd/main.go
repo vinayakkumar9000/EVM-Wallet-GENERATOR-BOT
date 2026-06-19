@@ -49,16 +49,16 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	shutdownComplete := make(chan struct{})
-	
+
 	go func() {
 		sig := <-sigCh
 		log.Printf("\n[INFO] Received signal %v, initiating graceful shutdown...", sig)
-		cancel() // Cancel context to stop all operations
+		cancel()                        // Cancel context to stop all operations
 		time.Sleep(ShutdownGracePeriod) // Grace period for operations to complete
 		log.Println("[INFO] Shutdown complete")
 		close(shutdownComplete)
 	}()
-	
+
 	defer func() {
 		select {
 		case <-shutdownComplete:
@@ -105,7 +105,7 @@ func main() {
 							stats.TotalConns(), stats.IdleConns(), stats.AcquiredConns(),
 							stats.MaxLifetimeDestroyCount())
 					}
-					
+
 					// Always warn if pool is near exhaustion (important for operations)
 					threshold := cfg.PoolWarningThreshold
 					if threshold <= 0 || threshold > 1.0 {

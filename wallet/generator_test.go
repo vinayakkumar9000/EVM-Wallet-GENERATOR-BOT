@@ -147,7 +147,7 @@ func TestPrivateKeyHex(t *testing.T) {
 	}
 
 	hexKey := w.PrivateKeyHex()
-	
+
 	// Verify length (64 hex chars)
 	if len(hexKey) != 64 {
 		t.Errorf("PrivateKeyHex() length = %d, want 64", len(hexKey))
@@ -170,7 +170,7 @@ func TestShortAddress(t *testing.T) {
 	}
 
 	short := w.ShortAddress()
-	
+
 	// Should contain ellipsis
 	if len(short) < 10 {
 		t.Errorf("ShortAddress() too short: %s", short)

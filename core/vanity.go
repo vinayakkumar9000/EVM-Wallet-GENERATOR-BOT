@@ -27,10 +27,10 @@ type VanityConfig struct {
 
 // VanityStats tracks vanity generation statistics
 type VanityStats struct {
-	Attempts      atomic.Int64
-	MatchesFound  atomic.Int64
-	StartTime     time.Time
-	Speed         atomic.Uint64 // addresses per second (stored as uint64 for atomic ops)
+	Attempts     atomic.Int64
+	MatchesFound atomic.Int64
+	StartTime    time.Time
+	Speed        atomic.Uint64 // addresses per second (stored as uint64 for atomic ops)
 }
 
 // VanityMatch represents a found vanity wallet
@@ -268,7 +268,7 @@ func displayVanityProgress(ctx context.Context, stats *VanityStats, target int, 
 			spinner := spinnerFrames[frame%len(spinnerFrames)]
 			fmt.Printf("\r  %s  tried %s  ·  found %d/%d  ·  %s  ·  P≈%.1f%%",
 				spinner,
-				formatNumber(int(attempts)),
+				FormatNumber(int(attempts)),
 				matches,
 				target,
 				wallet.FormatSpeed(speed),
@@ -297,7 +297,7 @@ func displayMatch(match *VanityMatch, current, target int) {
 	fmt.Printf("    address      %s\n", Info(addr))
 	fmt.Printf("    private key  %s\n", Hint("0x"+privKey[:8]+"..."+privKey[len(privKey)-6:]))
 	fmt.Printf("    attempts     %s   ·   elapsed %s\n\n",
-		formatNumber(int(match.Attempts)),
+		FormatNumber(int(match.Attempts)),
 		match.Elapsed.Round(time.Millisecond))
 }
 
@@ -404,7 +404,7 @@ func displayVanitySummary(stats *VanityStats, matches []*VanityMatch, target int
 		found,
 		target,
 		"",
-		formatNumber(int(attempts)),
+		FormatNumber(int(attempts)),
 		elapsed.Round(time.Millisecond),
 		wallet.FormatSpeed(avgSpeed),
 		wallet.FormatDifficulty(difficulty),

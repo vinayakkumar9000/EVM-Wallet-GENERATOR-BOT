@@ -222,9 +222,9 @@ func TestCalculateDifficulty(t *testing.T) {
 		{"1 char case-insensitive", "a", "", false, 16.0},
 		{"2 chars case-insensitive", "ab", "", false, 256.0},
 		{"3 chars case-insensitive", "abc", "", false, 4096.0},
-		{"prefix and suffix", "ab", "cd", false, 65536.0}, // 16^4
-		{"1 alpha char checksum", "a", "", true, 32.0},     // 16 * 2^1
-		{"2 alpha chars checksum", "ab", "", true, 1024.0}, // 256 * 2^2
+		{"prefix and suffix", "ab", "cd", false, 65536.0},       // 16^4
+		{"1 alpha char checksum", "a", "", true, 32.0},          // 16 * 2^1
+		{"2 alpha chars checksum", "ab", "", true, 1024.0},      // 256 * 2^2
 		{"mixed alpha numeric checksum", "a1", "", true, 512.0}, // 256 * 2^1
 		{"all numeric checksum", "12", "", false, 256.0},
 	}

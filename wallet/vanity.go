@@ -18,12 +18,12 @@ import (
 func MatchesVanity(addr string, prefix, suffix string, checksum bool) bool {
 	// Strip 0x prefix if present
 	addr = strings.TrimPrefix(addr, "0x")
-	
+
 	// Validate address length
 	if len(addr) != 40 {
 		return false
 	}
-	
+
 	// Get the comparison address based on checksum mode
 	compareAddr := addr
 	if checksum {
@@ -37,21 +37,21 @@ func MatchesVanity(addr string, prefix, suffix string, checksum bool) bool {
 		prefix = strings.ToLower(prefix)
 		suffix = strings.ToLower(suffix)
 	}
-	
+
 	// Check prefix match
 	if prefix != "" {
 		if !strings.HasPrefix(compareAddr, prefix) {
 			return false
 		}
 	}
-	
+
 	// Check suffix match
 	if suffix != "" {
 		if !strings.HasSuffix(compareAddr, suffix) {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
@@ -61,7 +61,7 @@ func IsValidHexPattern(pattern string) bool {
 	if pattern == "" {
 		return true
 	}
-	
+
 	for _, c := range pattern {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
 			return false
@@ -75,15 +75,15 @@ func ValidateVanityPattern(pattern string, name string) error {
 	if pattern == "" {
 		return nil // Empty is valid (means no constraint)
 	}
-	
+
 	if !IsValidHexPattern(pattern) {
 		return fmt.Errorf("%s contains invalid characters (must be hex: 0-9, a-f, A-F)", name)
 	}
-	
+
 	if len(pattern) > 40 {
 		return fmt.Errorf("%s is too long (max 40 characters)", name)
 	}
-	
+
 	return nil
 }
 
@@ -95,14 +95,14 @@ func CalculateDifficulty(prefix, suffix string, checksum bool) float64 {
 	if totalChars == 0 {
 		return 1.0 // No pattern = always matches
 	}
-	
+
 	// Base difficulty: 16^n where n is total pattern length
 	baseDifficulty := math.Pow(16, float64(totalChars))
-	
+
 	if !checksum {
 		return baseDifficulty
 	}
-	
+
 	// Checksum mode: count alphabetic hex chars (a-f, A-F)
 	// Each alphabetic char doubles difficulty due to case sensitivity
 	alphaCount := 0
@@ -111,7 +111,7 @@ func CalculateDifficulty(prefix, suffix string, checksum bool) float64 {
 			alphaCount++
 		}
 	}
-	
+
 	// Multiply by 2^alphaCount for case-sensitive matching
 	return baseDifficulty * math.Pow(2, float64(alphaCount))
 }
@@ -122,17 +122,17 @@ func EstimateTime(difficulty float64, speedPerSecond float64) (time50, time99 ti
 	if speedPerSecond <= 0 {
 		return 0, 0
 	}
-	
+
 	// 50% probability: difficulty * ln(2)
 	attempts50 := difficulty * math.Ln2
 	seconds50 := attempts50 / speedPerSecond
 	time50 = time.Duration(seconds50 * float64(time.Second))
-	
+
 	// 99% probability: difficulty * ln(100)
 	attempts99 := difficulty * math.Log(100)
 	seconds99 := attempts99 / speedPerSecond
 	time99 = time.Duration(seconds99 * float64(time.Second))
-	
+
 	return time50, time99
 }
 
@@ -143,13 +143,13 @@ func CalculateProbability(attempts int64, difficulty float64) float64 {
 	if difficulty <= 0 {
 		return 1.0
 	}
-	
+
 	// For very large difficulties, use approximation to avoid numerical issues
 	// P ≈ 1 - e^(-attempts/difficulty)
 	if difficulty > 1e15 {
 		return 1.0 - math.Exp(-float64(attempts)/difficulty)
 	}
-	
+
 	// Exact formula: P = 1 - (1 - 1/difficulty)^attempts
 	return 1.0 - math.Pow(1.0-1.0/difficulty, float64(attempts))
 }

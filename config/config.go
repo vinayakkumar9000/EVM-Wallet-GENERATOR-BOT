@@ -11,22 +11,31 @@ import (
 
 // Config holds all runtime configuration values.
 type Config struct {
-	DBHost        string
-	DBPort        int
-	DBUser        string
-	DBPassword    string
-	DBName        string
-	DBSSLMode     string
-	DBMaxConns    int  // ponytail: Configurable connection pool size
-	DBMinConns    int  // ponytail: Configurable minimum connections
-	Workers       int
-	BatchSize     int
-	LogLevel              string
-	EnableLogging         bool    // ponytail: Optional logging, reduces I/O overhead
-	PoolMonitorInterval   int     // ponytail: Pool monitoring interval in seconds (0 to disable)
-	PoolWarningThreshold  float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
-	UIMode                string  // ponytail: UI display mode - "full" or "minimal" (default: full)
-	ShowFirstRunTips      bool    // ponytail: Show tips on first run (default: true)
+	DBHost               string
+	DBPort               int
+	DBUser               string
+	DBPassword           string
+	DBName               string
+	DBSSLMode            string
+	DBMaxConns           int // ponytail: Configurable connection pool size
+	DBMinConns           int // ponytail: Configurable minimum connections
+	Workers              int
+	BatchSize            int
+	LogLevel             string
+	EnableLogging        bool    // ponytail: Optional logging, reduces I/O overhead
+	PoolMonitorInterval  int     // ponytail: Pool monitoring interval in seconds (0 to disable)
+	PoolWarningThreshold float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
+	UIMode               string  // ponytail: UI display mode - "full" or "minimal" (default: full)
+	ShowFirstRunTips     bool    // ponytail: Show tips on first run (default: true)
+	
+	// Export configuration
+	ExportEnabled       bool   // ponytail: Enable plaintext file export (default: false)
+	ExportMode          string // ponytail: Export mode - "paired", "key-only", "address-only", "combined" (default: paired)
+	ExportDir           string // ponytail: Output directory for export files (default: ./exports)
+	ExportOverwrite     bool   // ponytail: Overwrite existing files (default: false, append mode)
+	ExportAddressPrefix bool   // ponytail: Add 0x prefix to addresses (default: true)
+	ExportKeyPrefix     bool   // ponytail: Add 0x prefix to private keys (default: true)
+	ExportUseChecksum   bool   // ponytail: Use EIP-55 checksum for addresses (default: true)
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
@@ -83,6 +92,18 @@ func Load() (*Config, error) {
 
 	showFirstRunTips := getEnv("SHOW_FIRST_RUN_TIPS", "true") == "true"
 
+	// Export configuration
+	exportEnabled := getEnv("EXPORT_ENABLED", "false") == "true"
+	exportMode := getEnv("EXPORT_MODE", "paired")
+	if exportMode != "paired" && exportMode != "key-only" && exportMode != "address-only" && exportMode != "combined" {
+		exportMode = "paired"
+	}
+	exportDir := getEnv("EXPORT_DIR", "./exports")
+	exportOverwrite := getEnv("EXPORT_OVERWRITE", "false") == "true"
+	exportAddressPrefix := getEnv("EXPORT_ADDRESS_PREFIX", "true") == "true"
+	exportKeyPrefix := getEnv("EXPORT_KEY_PREFIX", "true") == "true"
+	exportUseChecksum := getEnv("EXPORT_USE_CHECKSUM", "true") == "true"
+
 	cfg := &Config{
 		DBHost:               getEnv("DB_HOST", "localhost"),
 		DBPort:               port,
@@ -100,6 +121,13 @@ func Load() (*Config, error) {
 		PoolWarningThreshold: poolWarningThreshold,
 		UIMode:               uiMode,
 		ShowFirstRunTips:     showFirstRunTips,
+		ExportEnabled:        exportEnabled,
+		ExportMode:           exportMode,
+		ExportDir:            exportDir,
+		ExportOverwrite:      exportOverwrite,
+		ExportAddressPrefix:  exportAddressPrefix,
+		ExportKeyPrefix:      exportKeyPrefix,
+		ExportUseChecksum:    exportUseChecksum,
 	}
 
 	// Validate configuration
@@ -160,6 +188,14 @@ func (c *Config) Validate() error {
 	// UI mode constraints
 	if c.UIMode != "full" && c.UIMode != "minimal" {
 		return fmt.Errorf("UI_MODE must be either 'full' or 'minimal', got '%s'", c.UIMode)
+	}
+
+	// Export mode constraints
+	if c.ExportMode != "paired" && c.ExportMode != "key-only" && c.ExportMode != "address-only" && c.ExportMode != "combined" {
+		return fmt.Errorf("EXPORT_MODE must be one of 'paired', 'key-only', 'address-only', or 'combined', got '%s'", c.ExportMode)
+	}
+	if c.ExportEnabled && c.ExportDir == "" {
+		return fmt.Errorf("EXPORT_DIR cannot be empty when EXPORT_ENABLED is true")
 	}
 
 	return nil

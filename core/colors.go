@@ -10,10 +10,10 @@ import (
 
 // ANSI color codes
 const (
-	Reset  = "\033[0m"
-	Bold   = "\033[1m"
-	Dim    = "\033[2m"
-	
+	Reset = "\033[0m"
+	Bold  = "\033[1m"
+	Dim   = "\033[2m"
+
 	// Foreground colors
 	Red     = "\033[31m"
 	Green   = "\033[32m"
@@ -22,7 +22,7 @@ const (
 	Magenta = "\033[35m"
 	Cyan    = "\033[36m"
 	Gray    = "\033[90m"
-	
+
 	// Background colors
 	BgRed    = "\033[41m"
 	BgGreen  = "\033[42m"

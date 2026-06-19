@@ -63,7 +63,7 @@ func EnsureDatabase(ctx context.Context, cfg *config.Config) error {
 	if err := validateDatabaseName(cfg.DBName); err != nil {
 		return fmt.Errorf("invalid database name: %w", err)
 	}
-	
+
 	log.Printf("[INFO] Database '%s' not found — creating it now...\n", cfg.DBName)
 	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE DATABASE "%s"`, cfg.DBName))
 	if err != nil {

@@ -115,13 +115,13 @@ func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 
 		total, ok := generationTotal(batches, cfg.BatchSize)
 		if !ok {
-			fmt.Printf(core.Error("\n[ERROR] Total wallets exceeds maximum safe value.\n"))
+			fmt.Printf(core.Error(fmt.Sprintf("\n[ERROR] Total wallets exceeds maximum safe value.\n")))
 			fmt.Print("\n  Press Enter to continue...")
 			readLine(reader)
 			return
 		}
 
-		fmt.Printf(core.Info("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, formatNumber(total)))
+		fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, core.FormatNumber(total))))
 		generateWallets(ctx, pool, cfg, total)
 		return
 	}
@@ -464,20 +464,20 @@ func promptPositiveInt(reader *bufio.Reader, prompt string) (int, bool) {
 
 	if input == "" {
 		fmt.Println(core.Error("\n[ERROR] Input cannot be empty."))
-		fmt.Println("        Please enter a positive integer (e.g., 1, 5, 100).") 
+		fmt.Println("        Please enter a positive integer (e.g., 1, 5, 100).")
 		return 0, false
 	}
 
 	n, err := strconv.Atoi(input)
 	if err != nil {
-		fmt.Printf(core.Error("\n[ERROR] Invalid input: '%s' is not a valid number.\n", input))
+		fmt.Printf(core.Error(fmt.Sprintf("\n[ERROR] Invalid input: '%s' is not a valid number.\n", input)))
 		fmt.Println("        Please enter a positive integer (e.g., 1, 5, 100).")
 		fmt.Println("        Examples: 1000, 50000, 1000000")
 		return 0, false
 	}
 
 	if n < 1 {
-		fmt.Printf(core.Error("\n[ERROR] Invalid value: %d is not positive.\n", n))
+		fmt.Printf(core.Error(fmt.Sprintf("\n[ERROR] Invalid value: %d is not positive.\n", n)))
 		fmt.Println("        Please enter a number greater than 0.")
 		fmt.Println("        Minimum value: 1")
 		return 0, false
@@ -504,11 +504,11 @@ func changeGenerationSettings(cfg *config.Config, reader *bufio.Reader) {
 		return
 	}
 	if err := validateBatchSize(batchSize); err != nil {
-		fmt.Printf(core.Error("\n[ERROR] %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("\n[ERROR] %v\n", err)))
 		return
 	}
 	cfg.BatchSize = batchSize
-	fmt.Printf(core.Info("[INFO] Generation batch size set to %d wallets.\n", cfg.BatchSize))
+	fmt.Printf(core.Info(fmt.Sprintf("[INFO] Generation batch size set to %d wallets.\n", cfg.BatchSize)))
 }
 
 func validateBatchSize(batchSize int) error {
@@ -533,13 +533,13 @@ func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		}
 	}
 
-	fmt.Printf(core.Info("\n[INFO] Starting wallet generation\n"))
-	fmt.Printf(core.Info("[INFO] Generating %d wallets\n", total))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] Starting wallet generation\n")))
+	fmt.Printf(core.Info(fmt.Sprintf("[INFO] Generating %d wallets\n", total)))
 
 	start := time.Now()
 
 	if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {
-		fmt.Printf(core.Error("\n[ERROR] Generation failed: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("\n[ERROR] Generation failed: %v\n", err)))
 		return
 	}
 
@@ -554,7 +554,7 @@ func handleStats(ctx context.Context, pool *pgxpool.Pool) {
 
 	s, err := core.GetStats(ctx, pool)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not load stats: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not load stats: %v\n", err)))
 		return
 	}
 	core.PrintStats(s)
@@ -585,11 +585,11 @@ func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
 	`, id).Scan(&w.ID, &w.Address, &w.CreatedAt, &w.Status)
 
 	if err == pgx.ErrNoRows {
-		fmt.Printf(core.Warning("\n[WARN] No wallet found with ID %d.\n", id))
+		fmt.Printf(core.Warning(fmt.Sprintf("\n[WARN] No wallet found with ID %d.\n", id)))
 		return
 	}
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Query failed: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Query failed: %v\n", err)))
 		return
 	}
 
@@ -617,7 +617,7 @@ func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
 
 func handleDatabaseHealth(ctx context.Context, pool *pgxpool.Pool) {
 	if err := core.RunHealthCheck(ctx, pool); err != nil {
-		fmt.Printf(core.Error("[ERROR] Health check failed: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Health check failed: %v\n", err)))
 	}
 }
 
@@ -782,7 +782,7 @@ func changeWorkers(cfg *config.Config, reader *bufio.Reader) {
 	}
 
 	cfg.Workers = workers
-	fmt.Printf(core.Info("[INFO] Workers set to %d for this session.\n", cfg.Workers))
+	fmt.Printf(core.Info(fmt.Sprintf("[INFO] Workers set to %d for this session.\n", cfg.Workers)))
 }
 
 func toggleLogging(cfg *config.Config) {
@@ -792,7 +792,7 @@ func toggleLogging(cfg *config.Config) {
 	if !cfg.EnableLogging {
 		status = "disabled"
 	}
-	fmt.Printf(core.Info("\n[INFO] Logging %s for this session.\n", status))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] Logging %s for this session.\n", status)))
 	if !cfg.EnableLogging {
 		fmt.Println("       Note: Error and warning messages will still be shown.")
 	}
@@ -819,7 +819,7 @@ func changePoolMonitorInterval(cfg *config.Config, reader *bufio.Reader) {
 	if interval == 0 {
 		fmt.Println(core.Info("[INFO] Pool monitoring disabled for this session."))
 	} else {
-		fmt.Printf(core.Info("[INFO] Pool monitor interval set to %d seconds for this session.\n", cfg.PoolMonitorInterval))
+		fmt.Printf(core.Info(fmt.Sprintf("[INFO] Pool monitor interval set to %d seconds for this session.\n", cfg.PoolMonitorInterval)))
 	}
 }
 
@@ -845,17 +845,17 @@ func changePoolWarningThreshold(cfg *config.Config, reader *bufio.Reader) {
 	}
 
 	cfg.PoolWarningThreshold = threshold
-	fmt.Printf(core.Info("[INFO] Pool warning threshold set to %.2f for this session.\n", cfg.PoolWarningThreshold))
+	fmt.Printf(core.Info(fmt.Sprintf("[INFO] Pool warning threshold set to %.2f for this session.\n", cfg.PoolWarningThreshold)))
 }
 
 func toggleUIMode(cfg *config.Config) {
 	if cfg.UIMode == "full" {
 		cfg.UIMode = "minimal"
-		fmt.Printf(core.Info("\n[INFO] UI mode set to 'minimal' for this session.\n"))
+		fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] UI mode set to 'minimal' for this session.\n")))
 		fmt.Println("       Minimal mode shows less decorative elements and focuses on essential information.")
 	} else {
 		cfg.UIMode = "full"
-		fmt.Printf(core.Info("\n[INFO] UI mode set to 'full' for this session.\n"))
+		fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] UI mode set to 'full' for this session.\n")))
 		fmt.Println("       Full mode shows all decorative elements and detailed information.")
 	}
 }
@@ -867,7 +867,7 @@ func toggleFirstRunTips(cfg *config.Config) {
 	if !cfg.ShowFirstRunTips {
 		status = "disabled"
 	}
-	fmt.Printf(core.Info("\n[INFO] First-run tips %s for this session.\n", status))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] First-run tips %s for this session.\n", status)))
 	if cfg.ShowFirstRunTips {
 		fmt.Println("       Tips will be shown on next application start.")
 	} else {
@@ -941,8 +941,8 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
 
 	// Skip detailed summary in minimal UI mode
 	if isMinimalUI(cfg) {
-		fmt.Printf(core.Info("[INFO] ✓ Generated %s wallets in %s (~%.0f wallets/sec)\n\n",
-			formatNumber(total), elapsed.Round(time.Millisecond), walletsPerSec))
+		fmt.Printf(core.Info(fmt.Sprintf("[INFO] ✓ Generated %s wallets in %s (~%.0f wallets/sec)\n\n",
+			core.FormatNumber(total), elapsed.Round(time.Millisecond), walletsPerSec)))
 		return
 	}
 
@@ -968,7 +968,7 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
   ╚══════════════════════════════════════════════════════════════╝
 
 `,
-		formatNumber(total),
+		core.FormatNumber(total),
 		elapsed.Round(time.Millisecond),
 		walletsPerSec,
 		cfg.Workers,
@@ -982,7 +982,7 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
 
 func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 	fmt.Println(core.Info("\n[INFO] Starting live stats watch (press Ctrl+C to stop)..."))
-	fmt.Println("       Refreshing every 5 seconds\n")
+	fmt.Println("       Refreshing every 5 seconds")
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
@@ -990,7 +990,7 @@ func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 	// Show initial stats
 	s, err := core.GetStats(ctx, pool)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not load stats: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not load stats: %v\n", err)))
 		return
 	}
 	core.PrintStats(s)
@@ -1017,7 +1017,7 @@ func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 
 			s, err := core.GetStats(ctx, pool)
 			if err != nil {
-				fmt.Printf(core.Error("[ERROR] Could not load stats: %v\n", err))
+				fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not load stats: %v\n", err)))
 				return
 			}
 			core.PrintStats(s)
@@ -1032,20 +1032,20 @@ func showDatabaseSize(ctx context.Context, pool *pgxpool.Pool) {
 	var dbSize string
 	err := pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_database_size($1))`, "walletdb").Scan(&dbSize)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not get database size: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not get database size: %v\n", err)))
 		return
 	}
 
 	var walletTableSize, walletIndexSize string
 	err = pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_total_relation_size('wallets'))`).Scan(&walletTableSize)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not get wallets table size: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not get wallets table size: %v\n", err)))
 		return
 	}
 
 	err = pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_indexes_size('wallets'))`).Scan(&walletIndexSize)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not get wallets index size: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not get wallets index size: %v\n", err)))
 		return
 	}
 
@@ -1117,7 +1117,7 @@ func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
 
 	file, err := os.Create(filename)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not create snapshot file: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not create snapshot file: %v\n", err)))
 		return
 	}
 	defer file.Close()
@@ -1138,7 +1138,7 @@ func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
 	fmt.Fprintf(file, "  Idle connections: %d\n", stat.IdleConns())
 	fmt.Fprintf(file, "  Acquired connections: %d\n", stat.AcquiredConns())
 	fmt.Fprintf(file, "  Max connections: %d\n", stat.MaxConns())
-	fmt.Printf(core.Info("\n[INFO] Health snapshot saved to: %s\n", filename))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] Health snapshot saved to: %s\n", filename)))
 }
 
 func showMaintenanceRecommendations(ctx context.Context, pool *pgxpool.Pool) {
@@ -1146,10 +1146,9 @@ func showMaintenanceRecommendations(ctx context.Context, pool *pgxpool.Pool) {
 
 	// Check table bloat
 	var walletCount int64
-	err := pool.QueryRow(ct
-x, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
+	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not count wallets: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not count wallets: %v\n", err)))
 		return
 	}
 
@@ -1161,7 +1160,7 @@ x, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
 		WHERE relname = 'wallets'
 	`).Scan(&lastVacuum)
 	if err != nil {
-		fmt.Printf(core.Warning("[WARN] Could not check last vacuum time: %v\n", err))
+		fmt.Printf(core.Warning(fmt.Sprintf("[WARN] Could not check last vacuum time: %v\n", err)))
 	}
 
 	// Check last analyze
@@ -1172,7 +1171,7 @@ x, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
 		WHERE relname = 'wallets'
 	`).Scan(&lastAnalyze)
 	if err != nil {
-		fmt.Printf(core.Warning("[WARN] Could not check last analyze time: %v\n", err))
+		fmt.Printf(core.Warning(fmt.Sprintf("[WARN] Could not check last analyze time: %v\n", err)))
 	}
 
 	fmt.Printf(`
@@ -1214,7 +1213,7 @@ x, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
 // ─── Monitoring Menu Helpers ──────────────────────────────────────────────────
 
 func watchPoolStatusLive(ctx context.Context, pool *pgxpool.Pool, interval int) {
-	fmt.Printf(core.Info("\n[INFO] Starting live pool status watch (press Enter to stop)...\n"))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] Starting live pool status watch (press Enter to stop)...\n")))
 	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
@@ -1250,7 +1249,7 @@ func watchPoolStatusLive(ctx context.Context, pool *pgxpool.Pool, interval int) 
 }
 
 func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int) {
-	fmt.Printf(core.Info("\n[INFO] Starting live wallet stats watch (press Enter to stop)...\n"))
+	fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] Starting live wallet stats watch (press Enter to stop)...\n")))
 	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
@@ -1259,7 +1258,7 @@ func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int)
 	// Show initial stats
 	s, err := core.GetStats(ctx, pool)
 	if err != nil {
-		fmt.Printf(core.Error("[ERROR] Could not load stats: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not load stats: %v\n", err)))
 		return
 	}
 	core.PrintStats(s)
@@ -1286,7 +1285,7 @@ func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int)
 
 			s, err := core.GetStats(ctx, pool)
 			if err != nil {
-				fmt.Printf(core.Error("[ERROR] Could not load stats: %v\n", err))
+				fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Could not load stats: %v\n", err)))
 				return
 			}
 			core.PrintStats(s)
@@ -1339,14 +1338,14 @@ func estimateSettings(cfg *config.Config) {
 			timeStr = fmt.Sprintf("%.0f seconds", seconds)
 		}
 
-		fmt.Printf("    %-20s : %s\n", s.name+" ("+formatNumber(s.count)+")", timeStr)
+		fmt.Printf("    %-20s : %s\n", s.name+" ("+core.FormatNumber(s.count)+")", timeStr)
 	}
 	fmt.Println()
 }
 
 func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Running small benchmark (1000 wallets)..."))
-	fmt.Println("       This will measure actual performance on your system.\n")
+	fmt.Println("       This will measure actual performance on your system.")
 
 	// Save original batch size
 	originalBatchSize := cfg.BatchSize
@@ -1355,7 +1354,7 @@ func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 	start := time.Now()
 
 	if err := core.GenerateWallets(ctx, pool, cfg, 1000); err != nil {
-		fmt.Printf(core.Error("[ERROR] Benchmark failed: %v\n", err))
+		fmt.Printf(core.Error(fmt.Sprintf("[ERROR] Benchmark failed: %v\n", err)))
 		cfg.BatchSize = originalBatchSize
 		return
 	}
@@ -1380,7 +1379,7 @@ func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 
 func compareWorkerCounts(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different worker counts..."))
-	fmt.Println("       Testing with 500 wallets each\n")
+	fmt.Println("       Testing with 500 wallets each")
 
 	originalWorkers := cfg.Workers
 	originalBatchSize := cfg.BatchSize
@@ -1410,12 +1409,12 @@ func compareWorkerCounts(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 	cfg.BatchSize = originalBatchSize
 
 	fmt.Println("\n  Recommendation: Use the worker count with highest throughput")
-	fmt.Println("                  that doesn't exceed your CPU capacity.\n")
+	fmt.Println("                  that doesn't exceed your CPU capacity.")
 }
 
 func compareBatchSizes(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different batch sizes..."))
-	fmt.Println("       Testing with 1000 wallets each\n")
+	fmt.Println("       Testing with 1000 wallets each")
 
 	originalBatchSize := cfg.BatchSize
 
@@ -1442,23 +1441,7 @@ func compareBatchSizes(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 	cfg.BatchSize = originalBatchSize
 
 	fmt.Println("\n  Recommendation: Larger batches are usually faster but use more memory.")
-	fmt.Println("                  500-1000 is optimal for most systems.\n")
-}
-
-func formatNumber(n int) string {
-	s := fmt.Sprintf("%d", n)
-	if len(s) <= 3 {
-		return s
-	}
-
-	var result []byte
-	for i, c := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			result = append(result, ',')
-		}
-		result = append(result, byte(c))
-	}
-	return string(result)
+	fmt.Println("                  500-1000 is optimal for most systems.")
 }
 
 // ─── Help Menu Pages ──────────────────────────────────────────────────────────

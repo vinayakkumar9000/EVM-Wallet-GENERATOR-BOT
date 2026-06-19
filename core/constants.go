@@ -35,7 +35,7 @@ const (
 	// Pool warmup configuration
 	// ponytail: Reduced from 1000/32 to 256/16 to lower memory footprint
 	// while maintaining performance. Pool grows naturally during runtime for large batches.
-	MinPoolWarmup = 100  // Minimum objects to pre-allocate
-	MaxPoolWarmup = 256  // Maximum objects to pre-allocate (reduced from 1000)
-	WarmupMultiplier = 16 // Objects per CPU core (reduced from 32)
+	MinPoolWarmup    = 100 // Minimum objects to pre-allocate
+	MaxPoolWarmup    = 256 // Maximum objects to pre-allocate (reduced from 1000)
+	WarmupMultiplier = 16  // Objects per CPU core (reduced from 32)
 )

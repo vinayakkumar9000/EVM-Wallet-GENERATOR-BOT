@@ -14,7 +14,7 @@ type EventType string
 
 const (
 	WalletCreated EventType = "wallet_created"
-	// Removed unused event types: BalanceReceived, TransactionSent, 
+	// Removed unused event types: BalanceReceived, TransactionSent,
 	// RotationComplete, FaucetClaim, BalanceUpdated
 )
 
@@ -33,7 +33,7 @@ func Log(ctx context.Context, pool *pgxpool.Pool, walletID int64, eventType Even
 	if err != nil {
 		return fmt.Errorf("marshal event data: %w", err)
 	}
-	
+
 	_, err = pool.Exec(ctx,
 		`INSERT INTO wallet_events (wallet_id, event_type, event_data) VALUES ($1, $2, $3)`,
 		walletID, string(eventType), jsonData,

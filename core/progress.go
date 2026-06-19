@@ -94,11 +94,11 @@ func (p *ProgressTracker) Render(done int) {
 	// Line 1: Spinner, bar, percentage, count
 	fmt.Printf("\r\033[K   %s  %s  %3.0f%%   %s / %s\n",
 		spinner, bar, pct,
-		formatNumber(done), formatNumber(p.total))
+		FormatNumber(done), FormatNumber(p.total))
 
 	// Line 2: Speed metrics
 	fmt.Printf("\r\033[K       speed    %s /s          peak     %s /s\n",
-		formatNumber(int(speed)), formatNumber(int(p.peakRate)))
+		FormatNumber(int(speed)), FormatNumber(int(p.peakRate)))
 
 	// Line 3: Time metrics
 	fmt.Printf("\r\033[K       elapsed  %.2fs              eta      %.2fs",
@@ -136,11 +136,11 @@ func (p *ProgressTracker) Finish(done int) {
 
 	fmt.Printf("\n%s\n", Success("✓ Generation complete"))
 	fmt.Printf("  %s wallets in %s\n",
-		formatNumber(done),
+		FormatNumber(done),
 		formatDuration(elapsed))
 	fmt.Printf("  Average: %s /s  |  Peak: %s /s\n\n",
-		formatNumber(int(avgRate)),
-		formatNumber(int(p.peakRate)))
+		FormatNumber(int(avgRate)),
+		FormatNumber(int(p.peakRate)))
 }
 
 // formatDuration formats a duration in a human-readable way.
@@ -161,8 +161,8 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dh %dm", hours, minutes)
 }
 
-// formatNumber formats an integer with thousand separators.
-func formatNumber(n int) string {
+// FormatNumber formats an integer with thousand separators.
+func FormatNumber(n int) string {
 	s := fmt.Sprintf("%d", n)
 	if len(s) <= 3 {
 		return s

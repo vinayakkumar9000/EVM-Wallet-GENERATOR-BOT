@@ -164,12 +164,12 @@ func Migrate(pool *pgxpool.Pool) error {
 	if _, err := pool.Exec(ctx, schema); err != nil {
 		return fmt.Errorf("migration failed: %w", err)
 	}
-	
+
 	// Sync existing data to system_stats if table was just created
 	if err := syncSystemStats(pool); err != nil {
 		return fmt.Errorf("sync stats failed: %w", err)
 	}
-	
+
 	return nil
 }
 
