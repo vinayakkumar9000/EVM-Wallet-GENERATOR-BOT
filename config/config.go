@@ -25,6 +25,8 @@ type Config struct {
 	EnableLogging         bool    // ponytail: Optional logging, reduces I/O overhead
 	PoolMonitorInterval   int     // ponytail: Pool monitoring interval in seconds (0 to disable)
 	PoolWarningThreshold  float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
+	UIMode                string  // ponytail: UI display mode - "full" or "minimal" (default: full)
+	ShowFirstRunTips      bool    // ponytail: Show tips on first run (default: true)
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
@@ -74,6 +76,13 @@ func Load() (*Config, error) {
 		}
 	}
 
+	uiMode := getEnv("UI_MODE", "full")
+	if uiMode != "full" && uiMode != "minimal" {
+		uiMode = "full"
+	}
+
+	showFirstRunTips := getEnv("SHOW_FIRST_RUN_TIPS", "true") == "true"
+
 	cfg := &Config{
 		DBHost:               getEnv("DB_HOST", "localhost"),
 		DBPort:               port,
@@ -89,6 +98,8 @@ func Load() (*Config, error) {
 		EnableLogging:        enableLogging,
 		PoolMonitorInterval:  poolMonitorInterval,
 		PoolWarningThreshold: poolWarningThreshold,
+		UIMode:               uiMode,
+		ShowFirstRunTips:     showFirstRunTips,
 	}
 
 	// Validate configuration
@@ -144,6 +155,11 @@ func (c *Config) Validate() error {
 	}
 	if c.DBName == "" {
 		return fmt.Errorf("DB_NAME cannot be empty")
+	}
+
+	// UI mode constraints
+	if c.UIMode != "full" && c.UIMode != "minimal" {
+		return fmt.Errorf("UI_MODE must be either 'full' or 'minimal', got '%s'", c.UIMode)
 	}
 
 	return nil

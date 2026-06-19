@@ -80,8 +80,9 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	fmt.Printf("\n")
 	tracker := NewProgressTracker(totalWallets)
 
+	// Start progress rendering goroutine
 	go func() {
-		ticker := time.NewTicker(ProgressUpdateInterval)
+		ticker := time.NewTicker(120 * time.Millisecond) // ~8 FPS for smooth animation
 		defer ticker.Stop()
 		for {
 			select {
@@ -245,7 +246,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	}
 
 	close(progressDone)
-	time.Sleep(BatchProcessDelay)
+	time.Sleep(150 * time.Millisecond) // Let final render complete
 
 	done := int(confirmedCount.Load())
 	tracker.Finish(done)

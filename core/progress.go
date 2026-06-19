@@ -15,20 +15,37 @@ type ProgressTracker struct {
 	total     int
 	startTime time.Time
 	frame     int
+	peakRate  float64
+	lastCount int
+	lastTime  time.Time
 }
 
 // NewProgressTracker creates a new progress tracker.
 func NewProgressTracker(total int) *ProgressTracker {
+	now := time.Now()
 	return &ProgressTracker{
 		total:     total,
-		startTime: time.Now(),
+		startTime: now,
+		lastTime:  now,
 		frame:     0,
+		peakRate:  0,
+		lastCount: 0,
 	}
 }
 
 // Render draws the progress bar with spinner, percentage, speed, and ETA.
-// Uses \r to redraw in place without scrolling.
+// Uses multi-line display with cursor positioning for smooth updates.
 func (p *ProgressTracker) Render(done int) {
+	if !IsColorEnabled() {
+		// Fallback: print every 10% milestone
+		pct := float64(done) / float64(p.total) * 100
+		if int(pct)%10 == 0 && done > p.lastCount {
+			fmt.Printf("Progress: %d/%d (%.0f%%)\n", done, p.total, pct)
+			p.lastCount = done
+		}
+		return
+	}
+
 	const barWidth = 40
 
 	// Calculate metrics
@@ -41,26 +58,27 @@ func (p *ProgressTracker) Render(done int) {
 		}
 	}
 
-	// Calculate speed (wallets/sec)
+	// Calculate current speed (wallets/sec)
 	speed := 0.0
 	if elapsed > 0 {
 		speed = float64(done) / elapsed
 	}
 
+	// Track peak rate
+	if speed > p.peakRate {
+		p.peakRate = speed
+	}
+
 	// Calculate ETA
-	eta := ""
+	eta := 0.0
 	if speed > 0 && done < p.total {
 		remaining := p.total - done
-		etaSeconds := float64(remaining) / speed
-		eta = formatDuration(time.Duration(etaSeconds * float64(time.Second)))
-	} else if done >= p.total {
-		eta = "done"
-	} else {
-		eta = "calculating..."
+		eta = float64(remaining) / speed
 	}
 
 	// Build progress bar
-	filled := int(pct / 100 * barWidth)
+	frac := pct / 100
+	filled := int(frac * float64(barWidth))
 	if filled > barWidth {
 		filled = barWidth
 	}
@@ -72,27 +90,57 @@ func (p *ProgressTracker) Render(done int) {
 	spinner := spinnerFrames[p.frame%len(spinnerFrames)]
 	p.frame++
 
-	// Render the line (using \r to overwrite)
-	fmt.Printf("\r%s [%s] %6.1f%% | %d/%d | %.0f w/s | ETA: %s   ",
-		spinner, bar, pct, done, p.total, speed, eta)
+	// Render multi-line display (3 lines)
+	// Line 1: Spinner, bar, percentage, count
+	fmt.Printf("\r\033[K   %s  %s  %3.0f%%   %s / %s\n",
+		spinner, bar, pct,
+		formatNumber(done), formatNumber(p.total))
+
+	// Line 2: Speed metrics
+	fmt.Printf("\r\033[K       speed    %s /s          peak     %s /s\n",
+		formatNumber(int(speed)), formatNumber(int(p.peakRate)))
+
+	// Line 3: Time metrics
+	fmt.Printf("\r\033[K       elapsed  %.2fs              eta      %.2fs",
+		elapsed, eta)
+
+	// Move cursor back up 2 lines for next update
+	fmt.Print("\033[2A")
+
+	p.lastCount = done
+	p.lastTime = time.Now()
 }
 
-// Clear clears the progress line.
+// Clear clears the progress display (3 lines).
 func (p *ProgressTracker) Clear() {
-	fmt.Print("\r\033[K") // Clear line
+	if !IsColorEnabled() {
+		return
+	}
+	// Move down 2 lines, clear all 3 lines
+	fmt.Print("\033[2B")
+	fmt.Print("\r\033[K\033[1A\r\033[K\033[1A\r\033[K")
 }
 
-// Finish prints final statistics.
+// Finish prints final statistics with enhanced formatting.
 func (p *ProgressTracker) Finish(done int) {
-	elapsed := time.Since(p.startTime)
-	speed := 0.0
-	if elapsed.Seconds() > 0 {
-		speed = float64(done) / elapsed.Seconds()
+	// Move cursor down to clear progress area
+	if IsColorEnabled() {
+		fmt.Print("\033[2B\r\033[K\n")
 	}
 
-	p.Clear()
-	fmt.Printf("✓ Generated %d wallets in %s (%.0f wallets/sec)\n\n",
-		done, formatDuration(elapsed), speed)
+	elapsed := time.Since(p.startTime)
+	avgRate := 0.0
+	if elapsed.Seconds() > 0 {
+		avgRate = float64(done) / elapsed.Seconds()
+	}
+
+	fmt.Printf("\n%s\n", Success("✓ Generation complete"))
+	fmt.Printf("  %s wallets in %s\n",
+		formatNumber(done),
+		formatDuration(elapsed))
+	fmt.Printf("  Average: %s /s  |  Peak: %s /s\n\n",
+		formatNumber(int(avgRate)),
+		formatNumber(int(p.peakRate)))
 }
 
 // formatDuration formats a duration in a human-readable way.
@@ -101,7 +149,7 @@ func formatDuration(d time.Duration) string {
 		return "< 1s"
 	}
 	if d < time.Minute {
-		return fmt.Sprintf("%.0fs", d.Seconds())
+		return fmt.Sprintf("%.2fs", d.Seconds())
 	}
 	if d < time.Hour {
 		minutes := int(d.Minutes())
@@ -111,4 +159,20 @@ func formatDuration(d time.Duration) string {
 	hours := int(d.Hours())
 	minutes := int(d.Minutes()) % 60
 	return fmt.Sprintf("%dh %dm", hours, minutes)
+}
+
+// formatNumber formats an integer with thousand separators.
+func formatNumber(n int) string {
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var result []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
 }

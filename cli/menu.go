@@ -26,6 +26,11 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 	// Clear screen and show banner on startup
 	core.ClearScreenIfEnabled()
 	printBanner()
+	
+	// Show first-run tips if enabled
+	if cfg.ShowFirstRunTips {
+		showFirstRunTips(reader, cfg)
+	}
 
 	for {
 		// Check if context is cancelled (graceful shutdown)
@@ -36,9 +41,13 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		default:
 		}
 
-		printStatusStrip(ctx, pool, cfg)
-		printMenu()
-		choice := strings.TrimSpace(readLine(reader))
+		// Show status strip
+		if strip, err := GetStatusStrip(ctx, pool, cfg); err == nil {
+			strip.Render()
+		}
+
+		printMenu(cfg)
+		choice := normalizeMenuChoice(readLine(reader))
 
 		// Clear screen before handling choice
 		core.ClearScreenIfEnabled()
@@ -53,16 +62,20 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		case "4":
 			handleDatabaseMenu(ctx, pool, reader)
 		case "5":
-			handleMonitoringMenu(ctx, pool, cfg, reader)
-		case "6":
 			handleBenchmarkMenu(ctx, pool, cfg, reader)
+		case "6":
+			handleConfigMenu(cfg, reader)
 		case "7":
 			handleConfigMenu(cfg, reader)
-		case "8":
-			handleHelpMenu(reader)
-		case "9":	fmt.Println(core.Info("\n[INFO] Goodbye."))
-			return
-		default:	fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 9."))
+				case "8":
+					handleHelpMenu(reader)
+				case "9":
+					handleVanityMenu(ctx, pool, cfg, reader)
+				case "0":
+					fmt.Println(core.Info("\n[INFO] Goodbye."))
+					return
+				default:
+					fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-9 or 0."))
 		}
 	}
 }
@@ -70,33 +83,119 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
 func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
-	handleGenerate(ctx, pool, cfg, reader)
+	// Flattened: Direct inline prompts instead of submenu
+	core.ClearScreenIfEnabled()
+	
+	fmt.Printf("\n%s\n", core.Highlight("GENERATE WALLETS"))
+	fmt.Printf("  Current settings: %d workers, batch size %d\n\n", cfg.Workers, cfg.BatchSize)
+	
+	fmt.Print("  Enter wallet count (or 'b' for batch mode, 's' for settings): ")
+	input := strings.ToLower(strings.TrimSpace(readLine(reader)))
+	
+	if input == "" {
+		return
+	}
+	
+	if input == "s" || input == "settings" {
+		changeGenerationSettings(cfg, reader)
+		handleGenerateMenu(ctx, pool, cfg, reader) // Recursive call to show menu again
+		return
+	}
+	
+	if input == "b" || input == "batch" {
+		// Batch mode
+		fmt.Printf("\n  Enter batch count (1 batch = %d wallets): ", cfg.BatchSize)
+		batchInput := strings.TrimSpace(readLine(reader))
+		
+		batches, err := strconv.Atoi(batchInput)
+		if err != nil || batches < 1 {
+			fmt.Println(core.Error("\n[ERROR] Please enter a valid positive number for batches."))
+			fmt.Print("\n  Press Enter to continue...")
+			readLine(reader)
+			return
+		}
+		
+		total, ok := generationTotal(batches, cfg.BatchSize)
+		if !ok {
+			fmt.Printf(core.Error("\n[ERROR] Total wallets exceeds maximum safe value.\n"))
+			fmt.Print("\n  Press Enter to continue...")
+			readLine(reader)
+			return
+		}
+		
+		fmt.Printf(core.Info("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, formatNumber(total)))
+		generateWallets(ctx, pool, cfg, total)
+		return
+	}
+	
+	// Direct count mode
+	count, err := strconv.Atoi(input)
+	if err != nil || count < 1 {
+		fmt.Println(core.Error("\n[ERROR] Please enter a valid positive number."))
+		fmt.Print("\n  Press Enter to continue...")
+		readLine(reader)
+		return
+	}
+	
+	generateWallets(ctx, pool, cfg, count)
 }
 
 func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
-	for {
-		fmt.Print(`
-  ┌────────────────────────────────────────────┐
-  │                STATISTICS                  │
-  │   1   Show current stats                   │
-  │   2   Watch stats live                     │
-  │   3   Database size                        │
-  │   4   Back                                 │
-  └────────────────────────────────────────────┘
-  Select option: `)
 
-		switch strings.TrimSpace(readLine(reader)) {
-		case "1":
-			handleStats(ctx, pool)
-		case "2":
-			watchStatsLive(ctx, pool)
-		case "3":
-			showDatabaseSize(ctx, pool)
-		case "4":
-			return
-		default:	fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 4."))
-		}
+	// Flattened: Show stats immediately with action options
+
+	core.ClearScreenIfEnabled()
+
+	
+
+	// Show stats immediately
+
+	handleStats(ctx, pool)
+
+	
+
+	// Offer quick actions
+
+	fmt.Printf("\n  %s watch live   %s database size   %s refresh   %s back\n",
+
+		core.Hint("[W]"), core.Hint("[D]"), core.Hint("[R]"), core.Hint("[Enter]"))
+
+	fmt.Print("  Action: ")
+
+	
+
+	choice := strings.ToLower(strings.TrimSpace(readLine(reader)))
+
+	
+
+	switch choice {
+
+	case "w", "watch":
+
+		watchStatsLive(ctx, pool)
+
+	case "d", "size":
+
+		showDatabaseSize(ctx, pool)
+
+		fmt.Print("\n  Press Enter to continue...")
+
+		readLine(reader)
+
+	case "r", "refresh":
+
+		handleStatsMenu(ctx, pool, reader) // Recursive refresh
+
+	case "":
+
+		return // Back to main menu
+
+	default:
+
+		return
+
 	}
+
 }
 
 func handleLookupMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
@@ -104,32 +203,187 @@ func handleLookupMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
 }
 
 func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+
+	// Combined Database + Monitoring menu (Tier 2 flattening)
+
 	for {
+
+		core.ClearScreenIfEnabled()
+
+		
+
 		fmt.Print(`
+
   ┌────────────────────────────────────────────┐
-  │              DATABASE TOOLS                │
+
+  │         DATABASE & MONITORING              │
+
   │   1   Health check                         │
+
   │   2   Connection pool status               │
-  │   3   Record health snapshot               │
-  │   4   Maintenance recommendations          │
-  │   5   Back                                 │
+
+  │   3   Watch pool live                      │
+
+  │   4   Watch wallet stats live              │
+
+  │   5   Record health snapshot               │
+
+  │   6   Maintenance recommendations          │
+
+  │   7   Database size                        │
+
+  │   8   Back                                 │
+
   └────────────────────────────────────────────┘
+
   Select option: `)
 
+
+
 		switch strings.TrimSpace(readLine(reader)) {
+
 		case "1":
+
 			handleDatabaseHealth(ctx, pool)
+
 		case "2":
+
 			showPoolStatus(pool)
+
+			fmt.Print("\n  Press Enter to continue...")
+
+			readLine(reader)
+
 		case "3":
-			recordHealthSnapshot(ctx, pool)
+
+			watchPoolStatusLive(ctx, pool, 5)
+
 		case "4":
-			showMaintenanceRecommendations(ctx, pool)
+
+			watchWalletStatsLive(ctx, pool, 5)
+
 		case "5":
+
+			recordHealthSnapshot(ctx, pool)
+
+			fmt.Print("\n  Press Enter to continue...")
+
+			readLine(reader)
+
+		case "6":
+
+			showMaintenanceRecommendations(ctx, pool)
+
+			fmt.Print("\n  Press Enter to continue...")
+
+			readLine(reader)
+
+		case "7":
+
+			showDatabaseSize(ctx, pool)
+
+			fmt.Print("\n  Press Enter to continue...")
+
+			readLine(reader)
+
+		case "8":
+
 			return
-		default:	fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 5."))
+
+		default:	fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 8."))
+
 		}
+
+
+func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+	core.ClearScreenIfEnabled()
+	
+	fmt.Printf("\n%s\n", core.Highlight("VANITY ADDRESS GENERATION"))
+	fmt.Println("  Generate wallets with custom prefix and/or suffix patterns")
+	fmt.Println()
+	
+	// Prompt for prefix (optional)
+	var prefix string
+	for {
+		fmt.Print("  Enter prefix pattern (optional, press Enter to skip): ")
+		prefix = strings.TrimSpace(readLine(reader))
+		
+		if prefix == "" {
+			break
+		}
+		
+		if err := wallet.ValidateVanityPattern(prefix, "prefix"); err != nil {
+			fmt.Printf(core.Error("\n[ERROR] %v\n"), err)
+			fmt.Println("        Valid characters: 0-9, a-f, A-F")
+			fmt.Println()
+			continue
+		}
+		break
 	}
+	
+	// Prompt for suffix (optional)
+	var suffix string
+	for {
+		fmt.Print("  Enter suffix pattern (optional, press Enter to skip): ")
+		suffix = strings.TrimSpace(readLine(reader))
+		
+		if suffix == "" {
+			break
+		}
+		
+		if err := wallet.ValidateVanityPattern(suffix, "suffix"); err != nil {
+			fmt.Printf(core.Error("\n[ERROR] %v\n"), err)
+			fmt.Println("        Valid characters: 0-9, a-f, A-F")
+			fmt.Println()
+			continue
+		}
+		break
+	}
+	
+	// Check if at least one pattern is provided
+	if prefix == "" && suffix == "" {
+		fmt.Println(core.Warning("\n[WARN] No pattern specified. Use 'Generate wallets' menu for random generation."))
+		fmt.Print("\n  Press Enter to continue...")
+		readLine(reader)
+		return
+	}
+	
+	// Prompt for checksum mode
+	fmt.Print("  Case-sensitive matching (harder)? [y/N]: ")
+	checksumInput := strings.ToLower(strings.TrimSpace(readLine(reader)))
+	checksum := checksumInput == "y" || checksumInput == "yes"
+	
+	// Prompt for wallet count
+	var count int
+	for {
+		countVal, ok := promptPositiveInt(reader, "  Number of matching wallets to generate: ")
+		if !ok {
+			continue
+		}
+		count = countVal
+		break
+	}
+	
+	// Create vanity config
+	vanityConfig := core.VanityConfig{
+		Prefix:      prefix,
+		Suffix:      suffix,
+		Checksum:    checksum,
+		TargetCount: count,
+	}
+	
+	// Generate vanity wallets
+	if err := core.GenerateVanityWallets(ctx, pool, cfg, vanityConfig); err != nil {
+		fmt.Printf(core.Error("\n[ERROR] Vanity generation failed: %v\n"), err)
+	}
+	
+	fmt.Print("\n  Press Enter to continue...")
+	readLine(reader)
+}
+
+
+	}
+
 }
 
 func handleMonitoringMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
@@ -193,74 +447,175 @@ func handleBenchmarkMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 }
 
 func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
+
 	// Store original config for reset functionality
+
 	originalCfg := *cfg
+
 	
+
 	for {
+
 		loggingStatus := "enabled"
+
 		if !cfg.EnableLogging {
+
 			loggingStatus = "disabled"
+
 		}
+
 		
+
+		tipsStatus := "enabled"
+
+		if !cfg.ShowFirstRunTips {
+
+			tipsStatus = "disabled"
+
+		}
+
+		
+
 		fmt.Printf(`
+
   ┌──────────────────────────────────────┐
+
   │             CONFIGURATION            │
+
   ├──────────────────────────────────────┤
+
   │  Database       : %-18s │
+
   │  User           : %-18s │
+
   │  Host           : %-18s │
+
   │  Port           : %-18d │
+
   │  Max conns      : %-18d │
+
   │  Min conns      : %-18d │
+
   │  Workers        : %-18d │
+
   │  Batch size     : %-15d wallets │
+
   │  Logging        : %-18s │
+
   │  Pool monitor   : %-15d s │
+
   │  Pool threshold : %-18.2f │
+
+  │  UI mode        : %-18s │
+
+  │  First-run tips : %-18s │
+
   ├──────────────────────────────────────┤
+
   │   1   Show current settings          │
+
   │   2   Workers                        │
+
   │   3   Batch size                     │
+
   │   4   Logging (enable/disable)       │
+
   │   5   Pool monitor interval          │
+
   │   6   Pool warning threshold         │
-  │   7   Reset session settings         │
-  │   8   Back                           │
+
+  │   7   UI mode (full/minimal)         │
+
+  │   8   First-run tips (toggle)        │
+
+  │   9   Reset session settings         │
+
+  │   0   Back                           │
+
   └──────────────────────────────────────┘
+
   Select option: `,
+
 			cfg.DBName,
+
 			cfg.DBUser,
+
 			cfg.DBHost,
+
 			cfg.DBPort,
+
 			cfg.DBMaxConns,
+
 			cfg.DBMinConns,
+
 			cfg.Workers,
+
 			cfg.BatchSize,
+
 			loggingStatus,
+
 			cfg.PoolMonitorInterval,
+
 			cfg.PoolWarningThreshold,
+
+			cfg.UIMode,
+
+			tipsStatus,
+
 		)
 
+
+
 		switch strings.TrimSpace(readLine(reader)) {
+
 		case "1":
+
 			showCurrentSettings(cfg)
+
 		case "2":
+
 			changeWorkers(cfg, reader)
+
 		case "3":
+
 			changeGenerationSettings(cfg, reader)
+
 		case "4":
+
 			toggleLogging(cfg)
+
 		case "5":
+
 			changePoolMonitorInterval(cfg, reader)
+
 		case "6":
+
 			changePoolWarningThreshold(cfg, reader)
+
 		case "7":
-			resetSessionSettings(cfg, &originalCfg)
+
+			toggleUIMode(cfg)
+
 		case "8":
+
+			toggleFirstRunTips(cfg)
+
+		case "9":
+
+			resetSessionSettings(cfg, &originalCfg)
+
+		case "0":
+
 			return
-		default:	fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 8."))
+
+		default:
+
+			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-9 or 0."))
+
 		}
+
 	}
+
 }
 
 func handleHelpMenu(reader *bufio.Reader) {
@@ -416,9 +771,23 @@ func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		}
 	}	fmt.Printf(core.Info("\n[INFO] Starting wallet generation\n"))	fmt.Printf(core.Info("[INFO] Generating %d wallets\n", total))
 
-	if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {	fmt.Printf(core.Error("\n[ERROR] Generation failed: %v\n", err))
-		return
-	}	fmt.Printf(core.Info("[INFO] Generation finished — all %d wallets stored successfully.\n\n", total))
+		start := time.Now()
+
+		if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {
+
+			fmt.Printf(core.Error("\n[ERROR] Generation failed: %v\n", err))
+
+			return
+
+		}
+
+		elapsed := time.Since(start)
+
+		
+
+		// Show completion summary
+
+		showCompletionSummary(total, elapsed, cfg)
 }
 
 func handleStats(ctx context.Context, pool *pgxpool.Pool) {	fmt.Println(core.Info("\n[INFO] Loading statistics..."))
@@ -508,7 +877,66 @@ func printBanner() {
 `, title, subtitle, chains)
 }
 
-func printMenu() {
+// normalizeMenuChoice converts letter shortcuts to number choices.
+func normalizeMenuChoice(input string) string {
+	input = strings.ToLower(strings.TrimSpace(input))
+	
+	// Letter shortcuts for main menu (updated for 9-item menu)
+	shortcuts := map[string]string{
+		"g": "1", // Generate
+		"s": "2", // Statistics
+		"l": "3", // Lookup
+		"d": "4", // Database & Monitoring (combined)
+		"b": "5", // Benchmark
+		"c": "6", // Configuration
+		"h": "8", // Help
+		"v": "9", // Vanity
+		"q": "0", // Quit
+		"x": "0", // Alternative quit
+	}
+	
+	if mapped, ok := shortcuts[input]; ok {
+		return mapped
+	}
+	return input
+}
+
+func printMenu(cfg *config.Config) {
+	title := core.Highlight("MAIN MENU")
+	
+	// Generate hint showing current settings
+	genHint := core.Hint(fmt.Sprintf("batch %d", cfg.BatchSize))
+	settingsHint := core.Hint(fmt.Sprintf("%d workers", cfg.Workers))
+	
+	fmt.Printf(`
+  ┌──────────────────────────────────────────────────────┐
+  │   %s                                        │
+  ├──────────────────────────────────────────────────────┤
+  │   %s %s   Generate wallets               %s │
+  │   %s %s   Statistics                                 │
+  │   %s %s   Wallet lookup                              │
+  │   %s %s   Database & monitoring                      │
+  │   %s %s   Benchmark / tuning                         │
+  │   %s %s   Configuration                  %s │
+  │   %s %s   Help                                       │
+  │   %s %s   Vanity address                             │
+  │   %s %s   Exit                                       │
+  └──────────────────────────────────────────────────────┘
+  %s `,
+		title,
+		core.Success("1"), core.Hint("[G]"), genHint,
+		core.Info("2"), core.Hint("[S]"),
+		core.Info("3"), core.Hint("[L]"),
+		core.Info("4"), core.Hint("[D]"),
+		core.Info("5"), core.Hint("[B]"),
+		core.Info("6"), core.Hint("[C]"), settingsHint,
+		core.Info("8"), core.Hint("[H]"),
+		core.Success("9"), core.Hint("[V]"),
+		core.Warning("0"), core.Hint("[Q]"),
+		core.Hint("Select option:"))
+}
+
+func printMenuOld() {
 	fmt.Print(`
   ┌──────────────────────────────────────┐
   │   1   Generate wallets               │
@@ -550,6 +978,35 @@ func showCurrentSettings(cfg *config.Config) {
 		cfg.DBHost,
 		cfg.DBPort,
 		cfg.DBName,
+
+func toggleUIMode(cfg *config.Config) {
+	if cfg.UIMode == "full" {
+		cfg.UIMode = "minimal"
+		fmt.Printf(core.Info("\n[INFO] UI mode set to 'minimal' for this session.\n"))
+		fmt.Println("       Minimal mode shows less decorative elements and focuses on essential information.")
+	} else {
+		cfg.UIMode = "full"
+		fmt.Printf(core.Info("\n[INFO] UI mode set to 'full' for this session.\n"))
+		fmt.Println("       Full mode shows all decorative elements and detailed information.")
+	}
+}
+
+func toggleFirstRunTips(cfg *config.Config) {
+	cfg.ShowFirstRunTips = !cfg.ShowFirstRunTips
+	
+	status := "enabled"
+	if !cfg.ShowFirstRunTips {
+		status = "disabled"
+	}
+	fmt.Printf(core.Info("\n[INFO] First-run tips %s for this session.\n", status))
+	if cfg.ShowFirstRunTips {
+		fmt.Println("       Tips will be shown on next application start.")
+	} else {
+		fmt.Println("       Tips will not be shown on application start.")
+	}
+}
+
+
 		cfg.DBUser,
 		cfg.DBMaxConns,
 		cfg.DBMinConns,
@@ -559,6 +1016,52 @@ func showCurrentSettings(cfg *config.Config) {
 		cfg.PoolMonitorInterval,
 		cfg.PoolWarningThreshold,
 	)
+
+// ─── Completion Summary ───────────────────────────────────────────────────────
+
+func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config) {
+	walletsPerSec := float64(total) / elapsed.Seconds()
+	
+	// Skip detailed summary in minimal UI mode
+	if isMinimalUI(cfg) {
+		fmt.Printf(core.Info("[INFO] ✓ Generated %s wallets in %s (~%.0f wallets/sec)\n\n", 
+			formatNumber(total), elapsed.Round(time.Millisecond), walletsPerSec))
+		return
+	}
+	
+	// Full UI mode - show detailed summary
+	fmt.Printf(`
+  ╔══════════════════════════════════════════════════════════════╗
+  ║                    GENERATION COMPLETE                       ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║                                                              ║
+  ║  ✓ Successfully generated and stored all wallets             ║
+  ║                                                              ║
+  ║  Summary:                                                    ║
+  ║    Wallets generated : %-37s ║
+  ║    Time elapsed      : %-37s ║
+  ║    Throughput        : ~%-34.0f wallets/sec ║
+  ║    Workers used      : %-37d ║
+  ║    Batch size        : %-37d ║
+  ║                                                              ║
+  ║  Performance:                                                ║
+  ║    Average per batch : %-37s ║
+  ║    Database inserts  : %-37d batches ║
+  ║                                                              ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+`, 
+		formatNumber(total),
+		elapsed.Round(time.Millisecond),
+		walletsPerSec,
+		cfg.Workers,
+		cfg.BatchSize,
+		time.Duration(elapsed.Nanoseconds()/int64((total+cfg.BatchSize-1)/cfg.BatchSize)).Round(time.Millisecond),
+		(total+cfg.BatchSize-1)/cfg.BatchSize,
+	)
+}
+
+
 }
 
 func changeWorkers(cfg *config.Config, reader *bufio.Reader) {
@@ -1415,3 +1918,49 @@ func confirmGeneration(total int) bool {
 		return fmt.Sprintf("unknown(%d)", s)
 	}
 }
+
+
+// ─── First-Run Tips ───────────────────────────────────────────────────────────
+
+func showFirstRunTips(reader *bufio.Reader, cfg *config.Config) {
+	fmt.Printf(`
+  ╔══════════════════════════════════════════════════════════════╗
+  ║                    WELCOME TO EVM WALLET MANAGER             ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║                                                              ║
+  ║  Quick Start Tips:                                           ║
+  ║                                                              ║
+  ║  1. Start Small                                              ║
+  ║     Try generating 1,000-10,000 wallets first to test       ║
+  ║     your system's performance.                               ║
+  ║                                                              ║
+  ║  2. Use Letter Shortcuts                                     ║
+  ║     Press 'G' for Generate, 'S' for Stats, 'Q' to Quit      ║
+  ║     Much faster than typing numbers!                         ║
+  ║                                                              ║
+  ║  3. Monitor Performance                                      ║
+  ║     Check Statistics (S) to see generation speed             ║
+  ║     Use Benchmark (B) to optimize your settings              ║
+  ║                                                              ║
+  ║  4. Current Settings                                         ║
+  ║     Workers: %-2d  |  Batch Size: %-4d  |  UI: %-8s    ║
+  ║                                                              ║
+  ║  5. Get Help Anytime                                         ║
+  ║     Press 'H' from main menu for detailed guides             ║
+  ║                                                              ║
+  ║  Tip: You can disable these tips in Configuration menu      ║
+  ║                                                              ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  %s
+`, cfg.Workers, cfg.BatchSize, cfg.UIMode, core.Hint("Press Enter to continue..."))
+	
+	readLine(reader)
+	core.ClearScreenIfEnabled()
+}
+
+// isMinimalUI returns true if UI mode is set to minimal
+func isMinimalUI(cfg *config.Config) bool {
+	return cfg.UIMode == "minimal"
+}
+
