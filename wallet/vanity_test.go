@@ -32,7 +32,7 @@ func TestMatchesVanity(t *testing.T) {
 		},
 		{
 			name:     "both prefix and suffix match case-insensitive",
-			addr:     "0xdead567890123456789012345678901234beef",
+			addr:     "0xdead567890123456789012345678901234abbeef",
 			prefix:   "dead",
 			suffix:   "beef",
 			checksum: false,

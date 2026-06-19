@@ -40,9 +40,6 @@ type VanityMatch struct {
 	Elapsed  time.Duration
 }
 
-// spinnerFrames for live progress display
-var spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-
 // CalibrateSpeed measures wallet generation speed for 1 second
 func CalibrateSpeed(ctx context.Context, cfg *config.Config) float64 {
 	workers := cfg.Workers
@@ -417,21 +414,4 @@ func displayVanitySummary(stats *VanityStats, matches []*VanityMatch, target int
 // clearLine returns ANSI escape code to clear current line
 func clearLine() string {
 	return "\033[2K"
-}
-
-// formatNumber formats an integer with comma separators
-func formatNumber(n int) string {
-	if n < 1000 {
-		return fmt.Sprintf("%d", n)
-	}
-
-	s := fmt.Sprintf("%d", n)
-	var result []byte
-	for i, c := range s {
-		if i > 0 && (len(s)-i)%3 == 0 {
-			result = append(result, ',')
-		}
-		result = append(result, byte(c))
-	}
-	return string(result)
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"runtime"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -249,7 +248,11 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	time.Sleep(150 * time.Millisecond) // Let final render complete
 
 	done := int(confirmedCount.Load())
+	elapsed := time.Since(start)
 	tracker.Finish(done)
+	
+	log.Printf("[INFO] Generation complete: %d wallets in %v (%.2f wallets/sec)", 
+		done, elapsed, float64(done)/elapsed.Seconds())
 
 	return nil
 }
