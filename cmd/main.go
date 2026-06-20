@@ -28,6 +28,8 @@ func main() {
 		generateCount = flag.Int("count", 0, "Generate N wallets and exit (non-interactive mode)")
 		exportMode    = flag.String("export-mode", "", "Export mode: paired, key-only, address-only, combined")
 		exportDir     = flag.String("export-dir", "", "Export directory path")
+		storageType   = flag.String("storage", "", "Storage backend: sqlite (default) or postgres")
+		dataDir       = flag.String("data-dir", "", "Data directory for SQLite (auto-determined if empty)")
 		showVersion   = flag.Bool("version", false, "Show version and exit")
 		showHelp      = flag.Bool("help", false, "Show help and exit")
 	)
@@ -53,6 +55,10 @@ func main() {
 		fmt.Println("  evmwalletbot -count 1000")
 		fmt.Println("\n  # Generate and export to CSV")
 		fmt.Println("  evmwalletbot -count 1000 -export-mode combined -export-dir ./output")
+		fmt.Println("\n  # Use PostgreSQL storage (requires PostgreSQL server)")
+		fmt.Println("  evmwalletbot -storage postgres")
+		fmt.Println("\n  # Use custom data directory for SQLite")
+		fmt.Println("  evmwalletbot -storage sqlite -data-dir ./my-wallets")
 		os.Exit(0)
 	}
 
@@ -82,6 +88,12 @@ func main() {
 	}
 	if *exportDir != "" {
 		cfg.ExportDir = *exportDir
+	}
+	if *storageType != "" {
+		cfg.StorageType = *storageType
+	}
+	if *dataDir != "" {
+		cfg.DataDir = *dataDir
 	}
 
 	// ── Create context for graceful shutdown ──────────────────────────────

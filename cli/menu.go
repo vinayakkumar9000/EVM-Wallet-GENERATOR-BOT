@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 
 	"evmwalletbot/config"
 	"evmwalletbot/core"
+	"evmwalletbot/storage"
 	"evmwalletbot/wallet"
 )
 
 // Run is the main entry point for the interactive CLI.
-func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
+func Run(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Clear screen and show banner on startup
@@ -80,7 +80,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
-func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleGenerateMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	// Flattened: Direct inline prompts instead of submenu
 	core.ClearScreenIfEnabled()
 
@@ -138,7 +138,7 @@ func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 	generateWallets(ctx, pool, cfg, count)
 }
 
-func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleStatsMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	// Flattened: Show stats immediately with action options
 	core.ClearScreenIfEnabled()
 
@@ -168,11 +168,11 @@ func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Read
 	}
 }
 
-func handleLookupMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleLookupMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	handleWalletInfo(ctx, pool, reader)
 }
 
-func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleDatabaseMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	// Combined Database + Monitoring menu (Tier 2 flattening)
 	for {
 		core.ClearScreenIfEnabled()
@@ -222,7 +222,7 @@ func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.R
 	}
 }
 
-func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleVanityMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	core.ClearScreenIfEnabled()
 
 	fmt.Printf("\n%s\n", core.Highlight("VANITY ADDRESS GENERATION"))
@@ -308,7 +308,7 @@ func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Confi
 	readLine(reader)
 }
 
-func handleBenchmarkMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleBenchmarkMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	for {
 		fmt.Print(`
   ┌────────────────────────────────────────────┐
@@ -549,7 +549,7 @@ func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	showCompletionSummary(total, elapsed, cfg)
 }
 
-func handleStats(ctx context.Context, pool *pgxpool.Pool) {
+func handleStats(ctx context.Context, store storage.Storage) {
 	fmt.Println(core.Info("\n[INFO] Loading statistics..."))
 
 	s, err := core.GetStats(ctx, pool)

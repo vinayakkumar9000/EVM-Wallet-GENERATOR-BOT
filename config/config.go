@@ -11,22 +11,31 @@ import (
 
 // Config holds all runtime configuration values.
 type Config struct {
+	// Storage configuration
+	StorageType string // ponytail: Storage backend - "sqlite" (default) or "postgres"
+	DataDir     string // ponytail: Data directory for SQLite database (auto-determined if empty)
+
+	// PostgreSQL configuration (only used if StorageType=postgres)
 	DBHost               string
 	DBPort               int
 	DBUser               string
 	DBPassword           string
 	DBName               string
 	DBSSLMode            string
-	DBMaxConns           int // ponytail: Configurable connection pool size
-	DBMinConns           int // ponytail: Configurable minimum connections
-	Workers              int
-	BatchSize            int
-	LogLevel             string
-	EnableLogging        bool    // ponytail: Optional logging, reduces I/O overhead
+	DBMaxConns           int     // ponytail: Configurable connection pool size
+	DBMinConns           int     // ponytail: Configurable minimum connections
 	PoolMonitorInterval  int     // ponytail: Pool monitoring interval in seconds (0 to disable)
 	PoolWarningThreshold float64 // ponytail: Pool usage warning threshold (0.0-1.0, default 0.8)
-	UIMode               string  // ponytail: UI display mode - "full" or "minimal" (default: full)
-	ShowFirstRunTips     bool    // ponytail: Show tips on first run (default: true)
+
+	// Generation configuration
+	Workers       int
+	BatchSize     int
+	LogLevel      string
+	EnableLogging bool // ponytail: Optional logging, reduces I/O overhead
+
+	// UI configuration
+	UIMode           string // ponytail: UI display mode - "full" or "minimal" (default: full)
+	ShowFirstRunTips bool   // ponytail: Show tips on first run (default: true)
 
 	// Export configuration
 	ExportEnabled       bool   // ponytail: Enable plaintext file export (default: false)
@@ -39,15 +48,25 @@ type Config struct {
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
+// Returns a config with safe defaults - never fails if .env is missing.
 func Load() (*Config, error) {
 	// Best-effort .env load — no error if file is absent.
 	_ = godotenv.Load()
 
+	// Storage configuration
+	storageType := getEnv("STORAGE", "sqlite")
+	if storageType != "sqlite" && storageType != "postgres" {
+		storageType = "sqlite" // Default to sqlite for invalid values
+	}
+	dataDir := getEnv("WALLET_DATA_DIR", "") // Empty = auto-determined
+
+	// PostgreSQL configuration (only validated if storageType=postgres)
 	port, err := strconv.Atoi(getEnv("DB_PORT", "5432"))
 	if err != nil {
-		return nil, fmt.Errorf("invalid DB_PORT: %w", err)
+		port = 5432
 	}
 
+	// Generation configuration
 	workers, err := strconv.Atoi(getEnv("WORKERS", "16"))
 	if err != nil || workers < 1 {
 		workers = 16
@@ -105,6 +124,8 @@ func Load() (*Config, error) {
 	exportUseChecksum := getEnv("EXPORT_USE_CHECKSUM", "true") == "true"
 
 	cfg := &Config{
+		StorageType:          storageType,
+		DataDir:              dataDir,
 		DBHost:               getEnv("DB_HOST", "localhost"),
 		DBPort:               port,
 		DBUser:               getEnv("DB_USER", "postgres"),
@@ -113,12 +134,12 @@ func Load() (*Config, error) {
 		DBSSLMode:            getEnv("DB_SSLMODE", "disable"),
 		DBMaxConns:           maxConns,
 		DBMinConns:           minConns,
+		PoolMonitorInterval:  poolMonitorInterval,
+		PoolWarningThreshold: poolWarningThreshold,
 		Workers:              workers,
 		BatchSize:            batchSize,
 		LogLevel:             getEnv("LOG_LEVEL", "info"),
 		EnableLogging:        enableLogging,
-		PoolMonitorInterval:  poolMonitorInterval,
-		PoolWarningThreshold: poolWarningThreshold,
 		UIMode:               uiMode,
 		ShowFirstRunTips:     showFirstRunTips,
 		ExportEnabled:        exportEnabled,
@@ -141,18 +162,43 @@ func Load() (*Config, error) {
 // Validate checks configuration for invalid values and constraint violations.
 // ponytail: Fail fast on invalid config rather than runtime errors.
 func (c *Config) Validate() error {
-	// Database connection pool constraints
-	if c.DBMinConns > c.DBMaxConns {
-		return fmt.Errorf("DB_MIN_CONNS (%d) cannot exceed DB_MAX_CONNS (%d)", c.DBMinConns, c.DBMaxConns)
-	}
-	if c.DBMaxConns < 1 {
-		return fmt.Errorf("DB_MAX_CONNS must be at least 1, got %d", c.DBMaxConns)
-	}
-	if c.DBMinConns < 0 {
-		return fmt.Errorf("DB_MIN_CONNS cannot be negative, got %d", c.DBMinConns)
+	// Storage type validation
+	if c.StorageType != "sqlite" && c.StorageType != "postgres" {
+		return fmt.Errorf("STORAGE must be either 'sqlite' or 'postgres', got '%s'", c.StorageType)
 	}
 
-	// Worker and batch size constraints
+	// PostgreSQL-specific validation (only if using postgres)
+	if c.StorageType == "postgres" {
+		if c.DBMinConns > c.DBMaxConns {
+			return fmt.Errorf("DB_MIN_CONNS (%d) cannot exceed DB_MAX_CONNS (%d)", c.DBMinConns, c.DBMaxConns)
+		}
+		if c.DBMaxConns < 1 {
+			return fmt.Errorf("DB_MAX_CONNS must be at least 1, got %d", c.DBMaxConns)
+		}
+		if c.DBMinConns < 0 {
+			return fmt.Errorf("DB_MIN_CONNS cannot be negative, got %d", c.DBMinConns)
+		}
+		if c.PoolMonitorInterval < 0 {
+			return fmt.Errorf("POOL_MONITOR_INTERVAL cannot be negative, got %d", c.PoolMonitorInterval)
+		}
+		if c.PoolWarningThreshold <= 0 || c.PoolWarningThreshold > 1.0 {
+			return fmt.Errorf("POOL_WARNING_THRESHOLD must be between 0.0 and 1.0, got %f", c.PoolWarningThreshold)
+		}
+		if c.DBPort < 1 || c.DBPort > 65535 {
+			return fmt.Errorf("DB_PORT must be between 1 and 65535, got %d", c.DBPort)
+		}
+		if c.DBHost == "" {
+			return fmt.Errorf("DB_HOST cannot be empty")
+		}
+		if c.DBUser == "" {
+			return fmt.Errorf("DB_USER cannot be empty")
+		}
+		if c.DBName == "" {
+			return fmt.Errorf("DB_NAME cannot be empty")
+		}
+	}
+
+	// Worker and batch size constraints (applies to all storage types)
 	if c.Workers < 1 {
 		return fmt.Errorf("WORKERS must be at least 1, got %d", c.Workers)
 	}
@@ -160,29 +206,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("BATCH_SIZE must be at least 1, got %d", c.BatchSize)
 	}
 	if c.BatchSize > 1000 {
-		return fmt.Errorf("BATCH_SIZE cannot exceed 1000 (PostgreSQL limit), got %d", c.BatchSize)
-	}
-
-	// Pool monitoring constraints
-	if c.PoolMonitorInterval < 0 {
-		return fmt.Errorf("POOL_MONITOR_INTERVAL cannot be negative, got %d", c.PoolMonitorInterval)
-	}
-	if c.PoolWarningThreshold <= 0 || c.PoolWarningThreshold > 1.0 {
-		return fmt.Errorf("POOL_WARNING_THRESHOLD must be between 0.0 and 1.0, got %f", c.PoolWarningThreshold)
-	}
-
-	// Database connection constraints
-	if c.DBPort < 1 || c.DBPort > 65535 {
-		return fmt.Errorf("DB_PORT must be between 1 and 65535, got %d", c.DBPort)
-	}
-	if c.DBHost == "" {
-		return fmt.Errorf("DB_HOST cannot be empty")
-	}
-	if c.DBUser == "" {
-		return fmt.Errorf("DB_USER cannot be empty")
-	}
-	if c.DBName == "" {
-		return fmt.Errorf("DB_NAME cannot be empty")
+		return fmt.Errorf("BATCH_SIZE cannot exceed 1000, got %d", c.BatchSize)
 	}
 
 	// UI mode constraints

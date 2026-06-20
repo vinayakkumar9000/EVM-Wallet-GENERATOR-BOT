@@ -11,9 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"evmwalletbot/config"
+	"evmwalletbot/storage"
 	"evmwalletbot/wallet"
 )
 
@@ -76,7 +75,7 @@ func CalibrateSpeed(ctx context.Context, cfg *config.Config) float64 {
 }
 
 // GenerateVanityWallets generates wallets matching the vanity pattern
-func GenerateVanityWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, vanity VanityConfig) error {
+func GenerateVanityWallets(ctx context.Context, store storage.Storage, cfg *config.Config, vanity VanityConfig) error {
 	// Validate patterns
 	if err := wallet.ValidateVanityPattern(vanity.Prefix, "prefix"); err != nil {
 		return err
@@ -88,7 +87,7 @@ func GenerateVanityWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.
 	// If both prefix and suffix are empty, fall back to normal generation
 	if vanity.Prefix == "" && vanity.Suffix == "" {
 		log.Println("[INFO] No vanity pattern specified, using normal generation")
-		return GenerateWallets(ctx, pool, cfg, vanity.TargetCount)
+		return GenerateWallets(ctx, store, cfg, vanity.TargetCount)
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
@@ -176,7 +175,7 @@ func GenerateVanityWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.
 
 	// Save matches to database
 	if len(matches) > 0 {
-		if err := saveVanityMatches(pool, matches); err != nil {
+	if err := saveVanityMatches(ctx, store, matches); err != nil {
 			return fmt.Errorf("failed to save matches: %w", err)
 		}
 	}
@@ -361,7 +360,7 @@ func confirmVanityGeneration(difficulty float64, speed float64) bool {
 }
 
 // saveVanityMatches saves found vanity wallets to database
-func saveVanityMatches(pool *pgxpool.Pool, matches []*VanityMatch) error {
+func saveVanityMatches(ctx context.Context, store storage.Storage, matches []*VanityMatch) error {
 	if len(matches) == 0 {
 		return nil
 	}
@@ -371,7 +370,7 @@ func saveVanityMatches(pool *pgxpool.Pool, matches []*VanityMatch) error {
 		wallets[i] = match.Wallet
 	}
 
-	_, err := insertWalletBatchCopy(pool, wallets)
+	_, err := store.SaveWallets(ctx, wallets)
 	if err != nil {
 		return fmt.Errorf("database insert failed: %w", err)
 	}
