@@ -292,9 +292,9 @@ func displayMatch(match *VanityMatch, current, target int) {
 	// Clear progress line
 	fmt.Print("\r" + clearLine())
 
-	fmt.Printf("\n  %s MATCH  %s\n", Success("✓"), Highlight(match.Wallet.ShortAddress()))
-	fmt.Printf("    address      %s\n", Info(addr))
-	fmt.Printf("    private key  %s\n", Hint("0x"+privKey[:8]+"..."+privKey[len(privKey)-6:]))
+	fmt.Printf("\n  %s MATCH  %s\n", Success("✓"), Highlight("%s", match.Wallet.ShortAddress()))
+	fmt.Printf("    address      %s\n", Info("%s", addr))
+	fmt.Printf("    private key  %s\n", Hint("%s", "0x"+privKey[:8]+"..."+privKey[len(privKey)-6:]))
 	fmt.Printf("    attempts     %s   ·   elapsed %s\n\n",
 		FormatNumber(int(match.Attempts)),
 		match.Elapsed.Round(time.Millisecond))

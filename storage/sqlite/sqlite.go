@@ -92,6 +92,9 @@ func determineDataDir() (string, error) {
 	// Try next to executable first
 	exePath, err := os.Executable()
 	if err == nil {
+		if resolved, resolveErr := filepath.EvalSymlinks(exePath); resolveErr == nil {
+			exePath = resolved
+		}
 		exeDir := filepath.Dir(exePath)
 		// Check if we can write to this directory
 		testFile := filepath.Join(exeDir, ".write_test")
