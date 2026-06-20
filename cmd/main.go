@@ -27,10 +27,20 @@ func main() {
 		exportDir     = flag.String("export-dir", "", "Export directory path")
 		storageType   = flag.String("storage", "", "Storage backend: sqlite (default) or postgres")
 		dataDir       = flag.String("data-dir", "", "Data directory for SQLite (auto-determined if empty)")
+		verifyFile    = flag.String("verify", "", "Verify exported wallet file (txt, csv, or json)")
 		showVersion   = flag.Bool("version", false, "Show version and exit")
 		showHelp      = flag.Bool("help", false, "Show help and exit")
 	)
 	flag.Parse()
+
+	// Handle --verify subcommand (optional, off-by-default verification)
+	if *verifyFile != "" {
+		if err := verifyExportedFile(*verifyFile); err != nil {
+			fmt.Fprintf(os.Stderr, "Verification failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 
 	if *showVersion {
 		fmt.Println("evmwalletbot v1.0.0")

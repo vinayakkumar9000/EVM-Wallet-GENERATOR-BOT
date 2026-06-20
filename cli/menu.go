@@ -4,7 +4,6 @@ package cli
 import (
 	"bufio"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
@@ -24,11 +23,6 @@ func Run(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	// Clear screen and show banner on startup
 	core.ClearScreenIfEnabled()
 	printBanner()
-
-	// Show first-run tips if enabled
-	if cfg.ShowFirstRunTips {
-		showFirstRunTips(reader, cfg)
-	}
 
 	for {
 		// Check if context is cancelled (graceful shutdown)
@@ -54,24 +48,22 @@ func Run(ctx context.Context, store storage.Storage, cfg *config.Config) {
 		case "1":
 			handleGenerateMenu(ctx, store, cfg, reader)
 		case "2":
-			handleStatsMenu(ctx, store, reader)
+			handleVanityMenuNew(ctx, store, cfg, reader)
 		case "3":
-			handleLookupMenu(ctx, store, reader)
+			handleStatsMenu(ctx, store, reader)
 		case "4":
-			handleDatabaseMenu(ctx, store, reader)
+			handleConfigMenu(cfg, reader)
 		case "5":
 			handleBenchmarkMenu(ctx, store, cfg, reader)
 		case "6":
-			handleConfigMenu(cfg, reader)
-		case "8":
+			handleImportVerify(reader)
+		case "7":
 			handleHelpMenu(reader)
-		case "9":
-			handleVanityMenu(ctx, store, cfg, reader)
 		case "0":
 			fmt.Println(core.Info("\n[INFO] Goodbye."))
 			return
 		default:
-			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-9 or 0."))
+			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-7 or 0."))
 		}
 	}
 }
@@ -85,7 +77,7 @@ func handleGenerateMenu(ctx context.Context, store storage.Storage, cfg *config.
 	fmt.Printf("\n%s\n", core.Highlight("GENERATE WALLETS"))
 	fmt.Printf("  Current settings: %d workers, batch size %d\n\n", cfg.Workers, cfg.BatchSize)
 
-	fmt.Print("  Enter wallet count (or 'b' for batch mode, 's' for settings): ")
+	fmt.Print("  Enter wallet count (or 'b' for batch mode, 'h' for HD/seed phrase, 's' for settings): ")
 	input := strings.ToLower(strings.TrimSpace(readLine(reader)))
 
 	if input == "" {
@@ -95,6 +87,11 @@ func handleGenerateMenu(ctx context.Context, store storage.Storage, cfg *config.
 	if input == "s" || input == "settings" {
 		changeGenerationSettings(cfg, reader)
 		handleGenerateMenu(ctx, store, cfg, reader) // Recursive call to show menu again
+		return
+	}
+
+	if input == "h" || input == "hd" || input == "seed" {
+		generateFromSeedPhrase(ctx, store, cfg)
 		return
 	}
 
@@ -144,79 +141,19 @@ func handleStatsMenu(ctx context.Context, store storage.Storage, reader *bufio.R
 	handleStats(ctx, store)
 
 	// Offer quick actions
-	fmt.Printf("\n  %s watch live   %s database size   %s refresh   %s back\n",
-		core.Hint("[W]"), core.Hint("[D]"), core.Hint("[R]"), core.Hint("[Enter]"))
+	fmt.Printf("\n  %s refresh   %s back\n",
+		core.Hint("[R]"), core.Hint("[Enter]"))
 	fmt.Print("  Action: ")
 
 	choice := strings.ToLower(strings.TrimSpace(readLine(reader)))
 
 	switch choice {
-	case "w", "watch":
-		watchStatsLive(ctx, store)
-	case "d", "size":
-		showDatabaseSize(ctx, store)
-		fmt.Print("\n  Press Enter to continue...")
-		readLine(reader)
 	case "r", "refresh":
 		handleStatsMenu(ctx, store, reader) // Recursive refresh
 	case "":
 		return // Back to main menu
 	default:
 		return
-	}
-}
-
-func handleLookupMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
-	handleWalletInfo(ctx, store, reader)
-}
-
-func handleDatabaseMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
-	// Combined Database + Monitoring menu (Tier 2 flattening)
-	for {
-		core.ClearScreenIfEnabled()
-
-		fmt.Print(`
-  ┌────────────────────────────────────────────┐
-  │         DATABASE & MONITORING              │
-  │   1   Health check                         │
-  │   2   Connection pool status               │
-  │   3   Watch pool live                      │
-  │   4   Watch wallet stats live              │
-  │   5   Record health snapshot               │
-  │   6   Maintenance recommendations          │
-  │   7   Database size                        │
-  │   8   Back                                 │
-  └────────────────────────────────────────────┘
-  Select option: `)
-
-		switch strings.TrimSpace(readLine(reader)) {
-		case "1":
-			handleDatabaseHealth(ctx, store)
-		case "2":
-			showPoolStatus(store)
-			fmt.Print("\n  Press Enter to continue...")
-			readLine(reader)
-		case "3":
-			watchPoolStatusLive(ctx, store, 5)
-		case "4":
-			watchWalletStatsLive(ctx, store, 5)
-		case "5":
-			recordHealthSnapshot(ctx, store)
-			fmt.Print("\n  Press Enter to continue...")
-			readLine(reader)
-		case "6":
-			showMaintenanceRecommendations(ctx, store)
-			fmt.Print("\n  Press Enter to continue...")
-			readLine(reader)
-		case "7":
-			showDatabaseSize(ctx, store)
-			fmt.Print("\n  Press Enter to continue...")
-			readLine(reader)
-		case "8":
-			return
-		default:
-			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 8."))
-		}
 	}
 }
 
@@ -346,11 +283,6 @@ func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
 			loggingStatus = "disabled"
 		}
 
-		tipsStatus := "enabled"
-		if !cfg.ShowFirstRunTips {
-			tipsStatus = "disabled"
-		}
-
 		fmt.Printf(`
   ┌──────────────────────────────────────┐
   │             CONFIGURATION            │
@@ -367,7 +299,6 @@ func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
   │  Pool monitor   : %-15d s │
   │  Pool threshold : %-18.2f │
   │  UI mode        : %-18s │
-  │  First-run tips : %-18s │
   ├──────────────────────────────────────┤
   │   1   Show current settings          │
   │   2   Workers                        │
@@ -376,8 +307,7 @@ func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
   │   5   Pool monitor interval          │
   │   6   Pool warning threshold         │
   │   7   UI mode (full/minimal)         │
-  │   8   First-run tips (toggle)        │
-  │   9   Reset session settings         │
+  │   8   Reset session settings         │
   │   0   Back                           │
   └──────────────────────────────────────┘
   Select option: `,
@@ -393,7 +323,6 @@ func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
 			cfg.PoolMonitorInterval,
 			cfg.PoolWarningThreshold,
 			cfg.UIMode,
-			tipsStatus,
 		)
 
 		switch strings.TrimSpace(readLine(reader)) {
@@ -412,13 +341,11 @@ func handleConfigMenu(cfg *config.Config, reader *bufio.Reader) {
 		case "7":
 			toggleUIMode(cfg)
 		case "8":
-			toggleFirstRunTips(cfg)
-		case "9":
 			resetSessionSettings(cfg, &originalCfg)
 		case "0":
 			return
 		default:
-			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-9 or 0."))
+			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1-8 or 0."))
 		}
 	}
 }
@@ -431,9 +358,8 @@ func handleHelpMenu(reader *bufio.Reader) {
   │   1   Generation modes                     │
   │   2   Batch size guide                     │
   │   3   Workers guide                        │
-  │   4   Database guide                       │
-  │   5   Settings guide                       │
-  │   6   Back                                 │
+  │   4   Settings guide                       │
+  │   5   Back                                 │
   └────────────────────────────────────────────┘
   Select option: `)
 
@@ -445,13 +371,11 @@ func handleHelpMenu(reader *bufio.Reader) {
 		case "3":
 			showWorkersHelp()
 		case "4":
-			showDatabaseHelp()
-		case "5":
 			showSettingsHelp()
-		case "6":
+		case "5":
 			return
 		default:
-			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 6."))
+			fmt.Println(core.Warning("\n[WARN] Invalid option — please choose 1 to 5."))
 		}
 	}
 }
@@ -558,45 +482,6 @@ func handleStats(ctx context.Context, store storage.Storage) {
 	core.PrintStats(s)
 }
 
-func handleWalletInfo(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
-	fmt.Print("\n  Enter wallet ID (numeric): ")
-	input := strings.TrimSpace(readLine(reader))
-
-	id, err := strconv.ParseInt(input, 10, 64)
-	if err != nil || id < 1 {
-		fmt.Println(core.Error("[ERROR] Please enter a valid wallet ID (positive integer)."))
-		return
-	}
-
-	record, err := store.GetWalletByID(ctx, id)
-	if err != nil {
-		fmt.Print(core.Warning("\n[WARN] No wallet found with ID %d.\n", id))
-		return
-	}
-
-	fmt.Printf(`
-  ╔══════════════════════════════════════════════════════╗
-  ║                   WALLET INFO                        ║
-  ╠══════════════════════════════════════════════════════╣
-  ║  ID          : %-36d ║
-  ║  Address     : 0x%-34s ║
-  ║  Status      : %-36s ║
-  ║  Created at  : %-36s ║
-  ╚══════════════════════════════════════════════════════╝
-`,
-		record.ID,
-		hex.EncodeToString(record.Address),
-		statusLabel(record.Status),
-		record.CreatedAt.Format("2006-01-02 15:04:05 UTC"),
-	)
-}
-
-func handleDatabaseHealth(ctx context.Context, store storage.Storage) {
-	if err := core.RunHealthCheck(ctx, store); err != nil {
-		fmt.Print(core.Error("[ERROR] Health check failed: %v\n", err))
-	}
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func printBanner() {
@@ -620,16 +505,15 @@ func printBanner() {
 func normalizeMenuChoice(input string) string {
 	input = strings.ToLower(strings.TrimSpace(input))
 
-	// Letter shortcuts for main menu (updated for 9-item menu)
+	// Letter shortcuts for main menu
 	shortcuts := map[string]string{
 		"g": "1", // Generate
-		"s": "2", // Statistics
-		"l": "3", // Lookup
-		"d": "4", // Database & Monitoring (combined)
+		"v": "2", // Vanity
+		"s": "3", // Statistics
+		"c": "4", // Configuration
 		"b": "5", // Benchmark
-		"c": "6", // Configuration
-		"h": "8", // Help
-		"v": "9", // Vanity
+		"i": "6", // Import & verify
+		"h": "7", // Help
 		"q": "0", // Quit
 		"x": "0", // Alternative quit
 	}
@@ -652,25 +536,23 @@ func printMenu(cfg *config.Config) {
   │   %s                                        │
   ├──────────────────────────────────────────────────────┤
   │   %s %s   Generate wallets               %s │
+  │   %s %s   Vanity generation                          │
   │   %s %s   Statistics                                 │
-  │   %s %s   Wallet lookup                              │
-  │   %s %s   Database & monitoring                      │
+  │   %s %s   Configuration / tuning         %s │
   │   %s %s   Benchmark / tuning                         │
-  │   %s %s   Configuration                  %s │
+  │   %s %s   Import & verify key                        │
   │   %s %s   Help                                       │
-  │   %s %s   Vanity address                             │
   │   %s %s   Exit                                       │
   └──────────────────────────────────────────────────────┘
   %s `,
 		title,
 		core.Success("1"), core.Hint("[G]"), genHint,
-		core.Info("2"), core.Hint("[S]"),
-		core.Info("3"), core.Hint("[L]"),
-		core.Info("4"), core.Hint("[D]"),
+		core.Success("2"), core.Hint("[V]"),
+		core.Info("3"), core.Hint("[S]"),
+		core.Info("4"), core.Hint("[C]"), settingsHint,
 		core.Info("5"), core.Hint("[B]"),
-		core.Info("6"), core.Hint("[C]"), settingsHint,
-		core.Info("8"), core.Hint("[H]"),
-		core.Success("9"), core.Hint("[V]"),
+		core.Info("6"), core.Hint("[I]"),
+		core.Info("7"), core.Hint("[H]"),
 		core.Warning("0"), core.Hint("[Q]"),
 		core.Hint("Select option:"))
 }
@@ -836,21 +718,6 @@ func toggleUIMode(cfg *config.Config) {
 	}
 }
 
-func toggleFirstRunTips(cfg *config.Config) {
-	cfg.ShowFirstRunTips = !cfg.ShowFirstRunTips
-
-	status := "enabled"
-	if !cfg.ShowFirstRunTips {
-		status = "disabled"
-	}
-	fmt.Print(core.Info("\n[INFO] First-run tips %s for this session.\n", status))
-	if cfg.ShowFirstRunTips {
-		fmt.Println("       Tips will be shown on next application start.")
-	} else {
-		fmt.Println("       Tips will not be shown on application start.")
-	}
-}
-
 func resetSessionSettings(cfg *config.Config, originalCfg *config.Config) {
 	fmt.Print("\n  Reset all settings to .env defaults? [y/N]: ")
 	input := strings.ToLower(strings.TrimSpace(readLine(bufio.NewReader(os.Stdin))))
@@ -956,273 +823,7 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
 
 // ─── Statistics Menu Helpers ──────────────────────────────────────────────────
 
-func watchStatsLive(ctx context.Context, store storage.Storage) {
-	fmt.Println(core.Info("\n[INFO] Starting live stats watch (press Ctrl+C to stop)..."))
-	fmt.Println("       Refreshing every 5 seconds")
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	// Show initial stats
-	s, err := core.GetStats(ctx, store)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
-		return
-	}
-	core.PrintStats(s)
-
-	// Create a channel to detect user interrupt
-	done := make(chan bool)
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		reader.ReadString('\n')
-		done <- true
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println(core.Info("\n[INFO] Watch stopped (context cancelled)"))
-			return
-		case <-done:
-			fmt.Println(core.Info("\n[INFO] Watch stopped by user"))
-			return
-		case <-ticker.C:
-			// Clear screen (ANSI escape code)
-			fmt.Print("\033[H\033[2J")
-
-			s, err := core.GetStats(ctx, store)
-			if err != nil {
-				fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
-				return
-			}
-			core.PrintStats(s)
-			fmt.Println(core.Info("\n[INFO] Press Enter to stop watching..."))
-		}
-	}
-}
-
-func showDatabaseSize(ctx context.Context, store storage.Storage) {
-	fmt.Println(core.Info("\n[INFO] Loading storage size information..."))
-
-	stats, err := core.GetStats(ctx, store)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not get storage stats: %v\n", err))
-		return
-	}
-
-	fmt.Printf(`
-  ┌──────────────────────────────────────────────────────┐
-  │                STORAGE SIZE                          │
-  ├──────────────────────────────────────────────────────┤
-  │  Backend          : %-33s │
-  │  Total wallets    : %-33d │
-  │  Storage size     : %-33s │
-  └──────────────────────────────────────────────────────┘
-`,
-		store.StorageType(),
-		stats.TotalWallets,
-		core.FormatBytes(stats.DBSizeBytes),
-	)
-}
-
 // ─── Database Tools Menu Helpers ──────────────────────────────────────────────
-
-func showPoolStatus(store storage.Storage) {
-	stats := store.GetPoolStats()
-	if stats == nil {
-		fmt.Println(core.Info("\n[INFO] Connection pooling is not used with the embedded SQLite backend."))
-		fmt.Println("       Pool monitoring is available when using PostgreSQL (-storage postgres).")
-		return
-	}
-
-	usagePercent := stats.Usage() * 100
-
-	fmt.Printf(`
-  ┌──────────────────────────────────────────────────────┐
-  │            CONNECTION POOL STATUS                    │
-  ├──────────────────────────────────────────────────────┤
-  │  Total connections    : %-29d │
-  │  Idle connections     : %-29d │
-  │  Acquired connections : %-29d │
-  │  Max connections      : %-29d │
-  │  Usage                : %-26.1f%% │
-  └──────────────────────────────────────────────────────┘
-`,
-		stats.TotalConns,
-		stats.IdleConns,
-		stats.AcquiredConns,
-		stats.MaxConns,
-		usagePercent,
-	)
-
-	if usagePercent > 80 {
-		fmt.Println("\n  ⚠️  Warning: Pool usage is high (>80%). Consider increasing DB_MAX_CONNS.")
-	}
-}
-
-func recordHealthSnapshot(ctx context.Context, store storage.Storage) {
-	timestamp := time.Now().Format("20060102_150405")
-	filename := fmt.Sprintf("health_snapshot_%s.txt", timestamp)
-
-	file, err := os.Create(filename)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not create snapshot file: %v\n", err))
-		return
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			fmt.Print(core.Error("[ERROR] Failed to close snapshot file: %v\n", err))
-		}
-	}()
-
-	fmt.Fprintf(file, "EVM Wallet Manager - Health Snapshot\n")
-	fmt.Fprintf(file, "Generated: %s\n", time.Now().Format("2006-01-02 15:04:05 UTC"))
-	fmt.Fprintf(file, "========================================\n\n")
-
-	// Run health check
-	if err := core.RunHealthCheck(ctx, store); err != nil {
-		fmt.Fprintf(file, "[ERROR] Health check failed: %v\n", err)
-	}
-
-	if stats := store.GetPoolStats(); stats != nil {
-		fmt.Fprintf(file, "\nConnection Pool Status:\n")
-		fmt.Fprintf(file, "  Total connections: %d\n", stats.TotalConns)
-		fmt.Fprintf(file, "  Idle connections: %d\n", stats.IdleConns)
-		fmt.Fprintf(file, "  Acquired connections: %d\n", stats.AcquiredConns)
-		fmt.Fprintf(file, "  Max connections: %d\n", stats.MaxConns)
-	}
-	fmt.Print(core.Info("\n[INFO] Health snapshot saved to: %s\n", filename))
-}
-
-func showMaintenanceRecommendations(ctx context.Context, store storage.Storage) {
-	fmt.Println(core.Info("\n[INFO] Analyzing storage for maintenance recommendations..."))
-
-	walletCount, err := store.CountWallets(ctx)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not count wallets: %v\n", err))
-		return
-	}
-
-	if store.StorageType() != "postgres" {
-		fmt.Printf(`
-  ┌──────────────────────────────────────────────────────┐
-  │         MAINTENANCE RECOMMENDATIONS                  │
-  ├──────────────────────────────────────────────────────┤
-  │  Total wallets: %-37d │
-  │  Backend      : %-37s │
-  └──────────────────────────────────────────────────────┘
-
-  Recommendations:
-  ✓ Embedded SQLite requires no vacuum or server maintenance
-  ✓ Back up the wallets.db file periodically if data is important
-`,
-			walletCount,
-			store.StorageType(),
-		)
-		fmt.Println()
-		return
-	}
-
-	fmt.Printf(`
-  ┌──────────────────────────────────────────────────────┐
-  │         MAINTENANCE RECOMMENDATIONS                  │
-  ├──────────────────────────────────────────────────────┤
-  │  Total wallets: %-37d │
-  └──────────────────────────────────────────────────────┘
-
-  Recommendations:
-  • PostgreSQL backend: run VACUUM ANALYZE periodically on large datasets
-  • Monitor connection pool usage from the Database menu
-`,
-		walletCount,
-	)
-	fmt.Println()
-}
-
-// ─── Monitoring Menu Helpers ──────────────────────────────────────────────────
-
-func watchPoolStatusLive(ctx context.Context, store storage.Storage, interval int) {
-	fmt.Print(core.Info("\n[INFO] Starting live pool status watch (press Enter to stop)...\n"))
-	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
-
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
-	defer ticker.Stop()
-
-	// Show initial status
-	showPoolStatus(store)
-
-	// Create a channel to detect user interrupt
-	done := make(chan bool)
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		reader.ReadString('\n')
-		done <- true
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println(core.Info("\n[INFO] Watch stopped (context cancelled)"))
-			return
-		case <-done:
-			fmt.Println(core.Info("\n[INFO] Watch stopped by user"))
-			return
-		case <-ticker.C:
-			// Clear screen (ANSI escape code)
-			fmt.Print("\033[H\033[2J")
-
-			showPoolStatus(store)
-			fmt.Println(core.Info("\n[INFO] Press Enter to stop watching..."))
-		}
-	}
-}
-
-func watchWalletStatsLive(ctx context.Context, store storage.Storage, interval int) {
-	fmt.Print(core.Info("\n[INFO] Starting live wallet stats watch (press Enter to stop)...\n"))
-	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
-
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
-	defer ticker.Stop()
-
-	// Show initial stats
-	s, err := core.GetStats(ctx, store)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
-		return
-	}
-	core.PrintStats(s)
-
-	// Create a channel to detect user interrupt
-	done := make(chan bool)
-	go func() {
-		reader := bufio.NewReader(os.Stdin)
-		reader.ReadString('\n')
-		done <- true
-	}()
-
-	for {
-		select {
-		case <-ctx.Done():
-			fmt.Println(core.Info("\n[INFO] Watch stopped (context cancelled)"))
-			return
-		case <-done:
-			fmt.Println(core.Info("\n[INFO] Watch stopped by user"))
-			return
-		case <-ticker.C:
-			// Clear screen (ANSI escape code)
-			fmt.Print("\033[H\033[2J")
-
-			s, err := core.GetStats(ctx, store)
-			if err != nil {
-				fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
-				return
-			}
-			core.PrintStats(s)
-			fmt.Println(core.Info("\n[INFO] Press Enter to stop watching..."))
-		}
-	}
-}
 
 // ─── Benchmark Menu Helpers ───────────────────────────────────────────────────
 
@@ -1276,30 +877,21 @@ func estimateSettings(cfg *config.Config) {
 func runSmallBenchmark(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Running small benchmark (1000 wallets)..."))
 	fmt.Println("       This will measure actual performance on your system.")
+	fmt.Println("       Note: Wallets are NOT stored, this is for speed testing only.")
 
-	// Save original batch size
-	originalBatchSize := cfg.BatchSize
-	cfg.BatchSize = 100 // Use smaller batches for benchmark
-
-	start := time.Now()
-
-	if err := core.GenerateWallets(ctx, store, cfg, 1000); err != nil {
+	elapsed, err := core.BenchmarkWalletGeneration(ctx, cfg, 1000)
+	if err != nil {
 		fmt.Print(core.Error("[ERROR] Benchmark failed: %v\n", err))
-		cfg.BatchSize = originalBatchSize
 		return
 	}
 
-	elapsed := time.Since(start)
 	walletsPerSec := 1000.0 / elapsed.Seconds()
-
-	// Restore original batch size
-	cfg.BatchSize = originalBatchSize
 
 	fmt.Printf(`
   ┌──────────────────────────────────────────────────────┐
   │            BENCHMARK RESULTS                         │
   ├──────────────────────────────────────────────────────┤
-  │  Wallets generated : 1,000                           │
+  │  Wallets generated : 1,000 (not stored)              │
   │  Time elapsed      : %-33s │
   │  Throughput        : ~%.0f wallets/second%-15s │
   │  Workers used      : %-33d │
@@ -1309,11 +901,9 @@ func runSmallBenchmark(ctx context.Context, store storage.Storage, cfg *config.C
 
 func compareWorkerCounts(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different worker counts..."))
-	fmt.Println("       Testing with 500 wallets each")
+	fmt.Println("       Testing with 500 wallets each (not stored)")
 
 	originalWorkers := cfg.Workers
-	originalBatchSize := cfg.BatchSize
-	cfg.BatchSize = 100
 
 	workerCounts := []int{4, 8, 16, 32}
 	results := make(map[int]time.Duration)
@@ -1322,12 +912,11 @@ func compareWorkerCounts(ctx context.Context, store storage.Storage, cfg *config
 		cfg.Workers = workers
 		fmt.Printf("  Testing %d workers... ", workers)
 
-		start := time.Now()
-		if err := core.GenerateWallets(ctx, store, cfg, 500); err != nil {
+		elapsed, err := core.BenchmarkWalletGeneration(ctx, cfg, 500)
+		if err != nil {
 			fmt.Printf("failed: %v\n", err)
 			continue
 		}
-		elapsed := time.Since(start)
 		results[workers] = elapsed
 
 		walletsPerSec := 500.0 / elapsed.Seconds()
@@ -1336,7 +925,6 @@ func compareWorkerCounts(ctx context.Context, store storage.Storage, cfg *config
 
 	// Restore original settings
 	cfg.Workers = originalWorkers
-	cfg.BatchSize = originalBatchSize
 
 	fmt.Println("\n  Recommendation: Use the worker count with highest throughput")
 	fmt.Println("                  that doesn't exceed your CPU capacity.")
@@ -1344,34 +932,30 @@ func compareWorkerCounts(ctx context.Context, store storage.Storage, cfg *config
 
 func compareBatchSizes(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different batch sizes..."))
-	fmt.Println("       Testing with 1000 wallets each")
+	fmt.Println("       Testing with 1000 wallets each (not stored)")
+	fmt.Println("       Note: Batch size affects storage performance, not generation speed.")
 
-	originalBatchSize := cfg.BatchSize
-
+	// Batch size doesn't affect generation-only benchmarks
+	// This test is kept for consistency but results will be similar
 	batchSizes := []int{100, 250, 500, 1000}
 	results := make(map[int]time.Duration)
 
 	for _, batchSize := range batchSizes {
-		cfg.BatchSize = batchSize
 		fmt.Printf("  Testing batch size %d... ", batchSize)
 
-		start := time.Now()
-		if err := core.GenerateWallets(ctx, store, cfg, 1000); err != nil {
+		elapsed, err := core.BenchmarkWalletGeneration(ctx, cfg, 1000)
+		if err != nil {
 			fmt.Printf("failed: %v\n", err)
 			continue
 		}
-		elapsed := time.Since(start)
 		results[batchSize] = elapsed
 
 		walletsPerSec := 1000.0 / elapsed.Seconds()
 		fmt.Printf("%.2fs (~%.0f wallets/sec)\n", elapsed.Seconds(), walletsPerSec)
 	}
 
-	// Restore original settings
-	cfg.BatchSize = originalBatchSize
-
-	fmt.Println("\n  Recommendation: Larger batches are usually faster but use more memory.")
-	fmt.Println("                  500-1000 is optimal for most systems.")
+	fmt.Println("\n  Note: Batch size primarily affects database insert performance,")
+	fmt.Println("        not wallet generation speed. Use 500-1000 for best storage performance.")
 }
 
 // ─── Help Menu Pages ──────────────────────────────────────────────────────────
@@ -1489,54 +1073,6 @@ func showWorkersHelp() {
 	bufio.NewReader(os.Stdin).ReadString('\n')
 }
 
-func showDatabaseHelp() {
-	fmt.Print(`
-  ┌──────────────────────────────────────────────────────────────┐
-  │                     DATABASE GUIDE                           │
-  ├──────────────────────────────────────────────────────────────┤
-  │                                                              │
-  │  Connection Pool:                                            │
-  │     The application maintains a pool of database             │
-  │     connections for efficient batch inserts.                 │
-  │                                                              │
-  │  Pool Settings:                                              │
-  │     • Max connections: 30 (default)                          │
-  │     • Min connections: 5 (default)                           │
-  │     • Configure via DB_MAX_CONNS and DB_MIN_CONNS            │
-  │                                                              │
-  │  Health Checks:                                              │
-  │     Use "Database tools" menu to:                            │
-  │     • Check database connectivity                            │
-  │     • Monitor connection pool status                         │
-  │     • Record health snapshots                                │
-  │     • Get maintenance recommendations                        │
-  │                                                              │
-  │  Maintenance:                                                │
-  │     For large databases (>1M wallets):                       │
-  │     • Run VACUUM ANALYZE periodically                        │
-  │     • Monitor table bloat                                    │
-  │     • Update statistics regularly                            │
-  │     • Check index health                                     │
-  │                                                              │
-  │  Storage Requirements:                                       │
-  │     Approximate size per wallet: ~100 bytes                  │
-  │     • 1 million wallets   ≈ 100 MB                           │
-  │     • 10 million wallets  ≈ 1 GB                             │
-  │     • 100 million wallets ≈ 10 GB                            │
-  │                                                              │
-  │  Performance Tips:                                           │
-  │     • Use SSD storage for best performance                   │
-  │     • Ensure adequate disk space (2× expected size)          │
-  │     • Monitor connection pool usage                          │
-  │     • Keep PostgreSQL updated                                │
-  │                                                              │
-  └──────────────────────────────────────────────────────────────┘
-
-  Press Enter to continue...
-`)
-	bufio.NewReader(os.Stdin).ReadString('\n')
-}
-
 func showSettingsHelp() {
 	fmt.Print(`
   ┌──────────────────────────────────────────────────────────────┐
@@ -1585,48 +1121,6 @@ func showSettingsHelp() {
   Press Enter to continue...
 `)
 	bufio.NewReader(os.Stdin).ReadString('\n')
-}
-
-// ─── First-Run Tips ───────────────────────────────────────────────────────────
-
-func showFirstRunTips(reader *bufio.Reader, cfg *config.Config) {
-	const innerW = 62
-
-	settingsLine := fmt.Sprintf("Workers: %d  |  Batch Size: %d  |  UI: %s",
-		cfg.Workers, cfg.BatchSize, cfg.UIMode)
-
-	fmt.Println(core.BoxTop(innerW))
-	fmt.Println(core.BoxRow(innerW, "WELCOME TO EVM WALLET MANAGER", 0))
-	fmt.Println("  ╠" + strings.Repeat("═", innerW) + "╣")
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "Quick Start Tips:", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "1. Start Small", -1))
-	fmt.Println(core.BoxRow(innerW, "Try generating 1,000-10,000 wallets first to test", -1))
-	fmt.Println(core.BoxRow(innerW, "your system's performance.", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "2. Use Letter Shortcuts", -1))
-	fmt.Println(core.BoxRow(innerW, "Press 'G' for Generate, 'S' for Stats, 'Q' to Quit", -1))
-	fmt.Println(core.BoxRow(innerW, "Much faster than typing numbers!", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "3. Monitor Performance", -1))
-	fmt.Println(core.BoxRow(innerW, "Check Statistics (S) to see generation speed", -1))
-	fmt.Println(core.BoxRow(innerW, "Use Benchmark (B) to optimize your settings", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "4. Current Settings", -1))
-	fmt.Println(core.BoxRow(innerW, settingsLine, -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "5. Get Help Anytime", -1))
-	fmt.Println(core.BoxRow(innerW, "Press 'H' from main menu for detailed guides", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxRow(innerW, "Tip: You can disable these tips in Configuration menu", -1))
-	fmt.Println(core.BoxRow(innerW, "", -1))
-	fmt.Println(core.BoxBottom(innerW))
-	fmt.Println()
-	fmt.Println(core.Hint("Press Enter to continue..."))
-
-	readLine(reader)
-	core.ClearScreenIfEnabled()
 }
 
 // isMinimalUI returns true if UI mode is set to minimal

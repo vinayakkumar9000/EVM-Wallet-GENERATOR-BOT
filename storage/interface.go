@@ -47,12 +47,14 @@ type Storage interface {
 
 // WalletRecord represents a wallet record retrieved from storage.
 type WalletRecord struct {
-	ID         int64                  // Database-assigned unique identifier
-	Address    []byte                 // 20-byte Ethereum address
-	PrivateKey []byte                 // 32-byte secp256k1 private key
-	CreatedAt  time.Time              // Timestamp when wallet was created
-	Status     int                    // 0=unused, 1=used, 2=reserved
-	Metadata   map[string]interface{} // Optional JSON metadata
+	ID              int64                  // Database-assigned unique identifier
+	Address         []byte                 // 20-byte Ethereum address
+	PrivateKey      []byte                 // 32-byte secp256k1 private key
+	CreatedAt       time.Time              // Timestamp when wallet was created
+	Status          int                    // 0=unused, 1=used, 2=reserved
+	Metadata        map[string]interface{} // Optional JSON metadata
+	DerivationIndex *uint32                // Optional: BIP-44 derivation index (nil for random wallets)
+	DerivationPath  string                 // Optional: BIP-44 derivation path (empty for random wallets)
 }
 
 // Stats contains aggregate statistics about stored wallets.

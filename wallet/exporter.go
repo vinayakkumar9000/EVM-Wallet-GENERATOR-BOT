@@ -5,25 +5,41 @@ import (
 	"bufio"
 	"encoding/csv"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/google/uuid"
 
 	"evmwalletbot/config"
 )
 
+// WalletExportRecord represents a wallet in JSON export format
+type WalletExportRecord struct {
+	Address         string  `json:"address"`
+	PrivateKey      string  `json:"private_key"`
+	DerivationIndex *uint32 `json:"derivation_index,omitempty"`
+	DerivationPath  string  `json:"derivation_path,omitempty"`
+}
+
 // Exporter handles plaintext export of wallet data to files.
-// Supports multiple export modes: paired, key-only, address-only, combined (CSV).
+// Supports multiple export modes: paired, key-only, address-only, combined (CSV), json, keystore.
 type Exporter struct {
 	config      config.Config
 	addressFile *os.File
 	keyFile     *os.File
 	csvFile     *os.File
 	csvWriter   *csv.Writer
+	jsonFile    *os.File
+	jsonEncoder *json.Encoder
+	jsonWallets []WalletExportRecord // Buffer for JSON export
+	keystoreDir string               // Directory for keystore files
 	bufWriter   *bufio.Writer
 	mu          sync.Mutex
 	count       int
@@ -103,8 +119,24 @@ func NewExporter(cfg config.Config) (*Exporter, error) {
 			}
 		}
 
+	case "json":
+		jsonPath := filepath.Join(cfg.ExportDir, "wallets.json")
+		e.jsonFile, err = os.OpenFile(jsonPath, openFlags, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("open JSON file: %w", err)
+		}
+		e.jsonWallets = make([]WalletExportRecord, 0, 1000)
+
+	case "keystore":
+		// Create keystore directory
+		keystorePath := filepath.Join(cfg.ExportDir, "keystore")
+		if err := os.MkdirAll(keystorePath, 0755); err != nil {
+			return nil, fmt.Errorf("create keystore directory: %w", err)
+		}
+		e.keystoreDir = keystorePath
+
 	default:
-		return nil, fmt.Errorf("invalid export mode: %s", cfg.ExportMode)
+		return nil, fmt.Errorf("invalid export mode: %s (valid: paired, key-only, address-only, combined, json, keystore)", cfg.ExportMode)
 	}
 
 	return e, nil
@@ -113,6 +145,12 @@ func NewExporter(cfg config.Config) (*Exporter, error) {
 // Export writes a single wallet to the export files.
 // Thread-safe: can be called concurrently from multiple goroutines.
 func (e *Exporter) Export(address, privateKey string) error {
+	return e.ExportWithDerivation(address, privateKey, nil, "")
+}
+
+// ExportWithDerivation writes a wallet with optional HD derivation info.
+// Thread-safe: can be called concurrently from multiple goroutines.
+func (e *Exporter) ExportWithDerivation(address, privateKey string, derivationIndex *uint32, derivationPath string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -156,6 +194,22 @@ func (e *Exporter) Export(address, privateKey string) error {
 	case "combined":
 		if err := e.csvWriter.Write([]string{formattedAddress, formattedKey}); err != nil {
 			return fmt.Errorf("write CSV row: %w", err)
+		}
+
+	case "json":
+		// Buffer wallet for JSON export (written on Close)
+		record := WalletExportRecord{
+			Address:         formattedAddress,
+			PrivateKey:      formattedKey,
+			DerivationIndex: derivationIndex,
+			DerivationPath:  derivationPath,
+		}
+		e.jsonWallets = append(e.jsonWallets, record)
+
+	case "keystore":
+		// Export as encrypted keystore file (requires password in config)
+		if err := e.exportKeystore(address, privateKey); err != nil {
+			return fmt.Errorf("export keystore: %w", err)
 		}
 	}
 
@@ -204,12 +258,79 @@ func (e *Exporter) Flush() error {
 	return nil
 }
 
+// exportKeystore creates an encrypted keystore file for a single wallet
+func (e *Exporter) exportKeystore(address, privateKey string) error {
+	// Remove 0x prefix if present
+	if len(privateKey) > 2 && privateKey[:2] == "0x" {
+		privateKey = privateKey[2:]
+	}
+	if len(address) > 2 && address[:2] == "0x" {
+		address = address[2:]
+	}
+
+	// Decode private key
+	keyBytes, err := hex.DecodeString(privateKey)
+	if err != nil {
+		return fmt.Errorf("decode private key: %w", err)
+	}
+
+	// Create ECDSA private key
+	privKey, err := crypto.ToECDSA(keyBytes)
+	if err != nil {
+		return fmt.Errorf("create ECDSA key: %w", err)
+	}
+
+	// Get password from config (should be set before export)
+	password := e.config.KeystorePassword
+	if password == "" {
+		return fmt.Errorf("keystore password not set")
+	}
+
+	// Derive address to ensure it matches
+	derivedAddr := crypto.PubkeyToAddress(privKey.PublicKey)
+
+	// Create keystore Key
+	id := uuid.New()
+	key := &keystore.Key{
+		Id:         id,
+		Address:    derivedAddr,
+		PrivateKey: privKey,
+	}
+
+	// Encrypt key using Web3 Secret Storage format (scrypt)
+	keystoreJSON, err := keystore.EncryptKey(key, password, keystore.StandardScryptN, keystore.StandardScryptP)
+	if err != nil {
+		return fmt.Errorf("encrypt key: %w", err)
+	}
+
+	// Generate filename: UTC--<timestamp>--<address>
+	timestamp := time.Now().UTC().Format("2006-01-02T15-04-05.000000000Z")
+	filename := fmt.Sprintf("UTC--%s--%s", timestamp, address)
+	keystorePath := filepath.Join(e.keystoreDir, filename)
+
+	// Write keystore file
+	if err := os.WriteFile(keystorePath, keystoreJSON, 0600); err != nil {
+		return fmt.Errorf("write keystore file: %w", err)
+	}
+
+	return nil
+}
+
 // Close flushes and closes all open files.
 func (e *Exporter) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	var errs []error
+
+	// Write JSON array if in JSON mode
+	if e.jsonFile != nil && len(e.jsonWallets) > 0 {
+		encoder := json.NewEncoder(e.jsonFile)
+		encoder.SetIndent("", "  ")
+		if err := encoder.Encode(e.jsonWallets); err != nil {
+			errs = append(errs, fmt.Errorf("write JSON: %w", err))
+		}
+	}
 
 	// Flush CSV writer before closing
 	if e.csvWriter != nil {
@@ -235,6 +356,12 @@ func (e *Exporter) Close() error {
 	if e.csvFile != nil {
 		if err := e.csvFile.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close CSV file: %w", err))
+		}
+	}
+
+	if e.jsonFile != nil {
+		if err := e.jsonFile.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close JSON file: %w", err))
 		}
 	}
 

@@ -34,17 +34,17 @@ type Config struct {
 	EnableLogging bool // ponytail: Optional logging, reduces I/O overhead
 
 	// UI configuration
-	UIMode           string // ponytail: UI display mode - "full" or "minimal" (default: full)
-	ShowFirstRunTips bool   // ponytail: Show tips on first run (default: true)
+	UIMode string // ponytail: UI display mode - "full" or "minimal" (default: full)
 
 	// Export configuration
 	ExportEnabled       bool   // ponytail: Enable plaintext file export (default: false)
-	ExportMode          string // ponytail: Export mode - "paired", "key-only", "address-only", "combined" (default: paired)
+	ExportMode          string // ponytail: Export mode - "paired", "key-only", "address-only", "combined", "json", "keystore" (default: paired)
 	ExportDir           string // ponytail: Output directory for export files (default: ./exports)
 	ExportOverwrite     bool   // ponytail: Overwrite existing files (default: false, append mode)
 	ExportAddressPrefix bool   // ponytail: Add 0x prefix to addresses (default: true)
 	ExportKeyPrefix     bool   // ponytail: Add 0x prefix to private keys (default: true)
 	ExportUseChecksum   bool   // ponytail: Use EIP-55 checksum for addresses (default: true)
+	KeystorePassword    string // ponytail: Password for encrypted keystore export (only used when ExportMode=keystore)
 }
 
 // Load reads .env (if present) then falls back to real environment variables.
@@ -112,12 +112,14 @@ func Load() (*Config, error) {
 		uiMode = "full"
 	}
 
-	showFirstRunTips := getEnv("SHOW_FIRST_RUN_TIPS", "true") == "true"
-
 	// Export configuration
 	exportEnabled := getEnv("EXPORT_ENABLED", "false") == "true"
 	exportMode := getEnv("EXPORT_MODE", "paired")
-	if exportMode != "paired" && exportMode != "key-only" && exportMode != "address-only" && exportMode != "combined" {
+	validExportModes := map[string]bool{
+		"paired": true, "key-only": true, "address-only": true,
+		"combined": true, "json": true, "keystore": true,
+	}
+	if !validExportModes[exportMode] {
 		exportMode = "paired"
 	}
 	exportDir := getEnv("EXPORT_DIR", "./exports")
@@ -125,6 +127,7 @@ func Load() (*Config, error) {
 	exportAddressPrefix := getEnv("EXPORT_ADDRESS_PREFIX", "true") == "true"
 	exportKeyPrefix := getEnv("EXPORT_KEY_PREFIX", "true") == "true"
 	exportUseChecksum := getEnv("EXPORT_USE_CHECKSUM", "true") == "true"
+	keystorePassword := getEnv("KEYSTORE_PASSWORD", "")
 
 	cfg := &Config{
 		StorageType:          storageType,
@@ -144,7 +147,6 @@ func Load() (*Config, error) {
 		LogLevel:             getEnv("LOG_LEVEL", "info"),
 		EnableLogging:        enableLogging,
 		UIMode:               uiMode,
-		ShowFirstRunTips:     showFirstRunTips,
 		ExportEnabled:        exportEnabled,
 		ExportMode:           exportMode,
 		ExportDir:            exportDir,
@@ -152,6 +154,7 @@ func Load() (*Config, error) {
 		ExportAddressPrefix:  exportAddressPrefix,
 		ExportKeyPrefix:      exportKeyPrefix,
 		ExportUseChecksum:    exportUseChecksum,
+		KeystorePassword:     keystorePassword,
 	}
 
 	// Validate configuration
@@ -218,11 +221,18 @@ func (c *Config) Validate() error {
 	}
 
 	// Export mode constraints
-	if c.ExportMode != "paired" && c.ExportMode != "key-only" && c.ExportMode != "address-only" && c.ExportMode != "combined" {
-		return fmt.Errorf("EXPORT_MODE must be one of 'paired', 'key-only', 'address-only', or 'combined', got '%s'", c.ExportMode)
+	validExportModes := map[string]bool{
+		"paired": true, "key-only": true, "address-only": true,
+		"combined": true, "json": true, "keystore": true,
+	}
+	if !validExportModes[c.ExportMode] {
+		return fmt.Errorf("EXPORT_MODE must be one of 'paired', 'key-only', 'address-only', 'combined', 'json', or 'keystore', got '%s'", c.ExportMode)
 	}
 	if c.ExportEnabled && c.ExportDir == "" {
 		return fmt.Errorf("EXPORT_DIR cannot be empty when EXPORT_ENABLED is true")
+	}
+	if c.ExportMode == "keystore" && c.KeystorePassword == "" {
+		return fmt.Errorf("KEYSTORE_PASSWORD must be set when EXPORT_MODE is 'keystore'")
 	}
 
 	return nil
