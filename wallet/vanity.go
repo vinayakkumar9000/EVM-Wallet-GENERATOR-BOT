@@ -15,13 +15,21 @@ import (
 // prefix: hex pattern to match at start (empty = no prefix check)
 // suffix: hex pattern to match at end (empty = no suffix check)
 // checksum: if true, performs case-sensitive match against EIP-55 checksummed address
+// Returns (matches bool, matchedPattern int) where matchedPattern is -1 if no match
 func MatchesVanity(addr string, prefix, suffix string, checksum bool) bool {
+	matched, _ := MatchesVanitySingle(addr, prefix, suffix, checksum)
+	return matched
+}
+
+// MatchesVanitySingle checks if an address matches a single prefix/suffix pattern.
+// Returns (matches bool, empty string) for backward compatibility
+func MatchesVanitySingle(addr string, prefix, suffix string, checksum bool) (bool, string) {
 	// Strip 0x prefix if present
 	addr = strings.TrimPrefix(addr, "0x")
 
 	// Validate address length
 	if len(addr) != 40 {
-		return false
+		return false, ""
 	}
 
 	// Get the comparison address based on checksum mode
@@ -41,18 +49,42 @@ func MatchesVanity(addr string, prefix, suffix string, checksum bool) bool {
 	// Check prefix match
 	if prefix != "" {
 		if !strings.HasPrefix(compareAddr, prefix) {
-			return false
+			return false, ""
 		}
 	}
 
 	// Check suffix match
 	if suffix != "" {
 		if !strings.HasSuffix(compareAddr, suffix) {
-			return false
+			return false, ""
 		}
 	}
 
-	return true
+	patternName := fmt.Sprintf("%s...%s", prefix, suffix)
+	return true, patternName
+}
+
+// MatchesAnyPattern checks if an address matches any of the given patterns (OR logic).
+// Returns (matches bool, patternIndex int, patternName string)
+// patternIndex is -1 if no match, otherwise the index of the matched pattern
+func MatchesAnyPattern(addr string, patterns []VanityPattern, checksum bool) (bool, int, string) {
+	for i, pattern := range patterns {
+		if matched, name := MatchesVanitySingle(addr, pattern.Prefix, pattern.Suffix, checksum); matched {
+			displayName := name
+			if pattern.Name != "" {
+				displayName = pattern.Name
+			}
+			return true, i, displayName
+		}
+	}
+	return false, -1, ""
+}
+
+// VanityPattern represents a single vanity pattern (prefix and/or suffix)
+type VanityPattern struct {
+	Prefix string
+	Suffix string
+	Name   string // Optional name for the pattern
 }
 
 // IsValidHexPattern validates that a pattern contains only valid hex characters.
@@ -114,6 +146,35 @@ func CalculateDifficulty(prefix, suffix string, checksum bool) float64 {
 
 	// Multiply by 2^alphaCount for case-sensitive matching
 	return baseDifficulty * math.Pow(2, float64(alphaCount))
+}
+
+// CalculateMultiPatternDifficulty computes difficulty for multiple patterns (OR logic).
+// For OR logic, the effective difficulty is based on the easiest pattern.
+// Formula: 1/difficulty_total = 1/d1 + 1/d2 + ... + 1/dn
+// Therefore: difficulty_total = 1 / (1/d1 + 1/d2 + ... + 1/dn)
+func CalculateMultiPatternDifficulty(patterns []VanityPattern, checksum bool) float64 {
+	if len(patterns) == 0 {
+		return 1.0
+	}
+
+	if len(patterns) == 1 {
+		return CalculateDifficulty(patterns[0].Prefix, patterns[0].Suffix, checksum)
+	}
+
+	// Calculate sum of reciprocals
+	sumReciprocals := 0.0
+	for _, pattern := range patterns {
+		difficulty := CalculateDifficulty(pattern.Prefix, pattern.Suffix, checksum)
+		if difficulty > 0 {
+			sumReciprocals += 1.0 / difficulty
+		}
+	}
+
+	if sumReciprocals == 0 {
+		return 1.0
+	}
+
+	return 1.0 / sumReciprocals
 }
 
 // EstimateTime calculates time estimates for finding a match.

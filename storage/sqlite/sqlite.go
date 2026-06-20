@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite" // Pure Go SQLite driver
@@ -121,20 +122,21 @@ func (s *SQLiteStorage) Migrate(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS wallets (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			address BLOB NOT NULL,
+			address BLOB NOT NULL UNIQUE,
 			private_key BLOB NOT NULL,
 			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			status INTEGER NOT NULL DEFAULT 0,
-			metadata TEXT
+			metadata TEXT,
+			derivation_index INTEGER,
+			derivation_path TEXT
 		)
 	`)
 	if err != nil {
 		return fmt.Errorf("create wallets table: %w", err)
 	}
 
-	// Create indexes
+	// Create indexes (UNIQUE constraint on address already creates an index)
 	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_wallets_address ON wallets(address)",
 		"CREATE INDEX IF NOT EXISTS idx_wallets_status ON wallets(status)",
 		"CREATE INDEX IF NOT EXISTS idx_wallets_created_at ON wallets(created_at)",
 	}
@@ -143,6 +145,58 @@ func (s *SQLiteStorage) Migrate(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, idx); err != nil {
 			return fmt.Errorf("create index: %w", err)
 		}
+	}
+
+	// Add derivation columns if they don't exist (migration for existing databases)
+	// SQLite doesn't support IF NOT EXISTS for ALTER TABLE, so we check first
+	var colCount int
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM pragma_table_info('wallets') 
+		WHERE name IN ('derivation_index', 'derivation_path')
+	`).Scan(&colCount)
+	if err != nil {
+		return fmt.Errorf("check derivation columns: %w", err)
+	}
+
+	if colCount < 2 {
+		// Add missing columns
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE wallets ADD COLUMN derivation_index INTEGER`); err != nil {
+			// Ignore error if column already exists
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("add derivation_index column: %w", err)
+			}
+		}
+		if _, err := s.db.ExecContext(ctx, `ALTER TABLE wallets ADD COLUMN derivation_path TEXT`); err != nil {
+			// Ignore error if column already exists
+			if !strings.Contains(err.Error(), "duplicate column name") {
+				return fmt.Errorf("add derivation_path column: %w", err)
+			}
+		}
+	}
+
+	// Create vanity search state table for resume functionality
+	_, err = s.db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS vanity_search_state (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			patterns TEXT NOT NULL,
+			checksum INTEGER NOT NULL DEFAULT 0,
+			target_count INTEGER NOT NULL,
+			attempts INTEGER NOT NULL DEFAULT 0,
+			matches_found INTEGER NOT NULL DEFAULT 0,
+			start_time DATETIME NOT NULL,
+			last_update DATETIME NOT NULL,
+			status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'paused', 'completed'))
+		)
+	`)
+	if err != nil {
+		return fmt.Errorf("create vanity_search_state table: %w", err)
+	}
+
+	_, err = s.db.ExecContext(ctx, `
+		CREATE INDEX IF NOT EXISTS idx_vanity_search_status ON vanity_search_state(status, last_update)
+	`)
+	if err != nil {
+		return fmt.Errorf("create vanity search index: %w", err)
 	}
 
 	return nil
@@ -163,8 +217,8 @@ func (s *SQLiteStorage) SaveWallets(ctx context.Context, wallets []*wallet.Walle
 
 	// Prepare insert statement
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO wallets (address, private_key, created_at, status)
-		VALUES (?, ?, ?, 0)
+		INSERT INTO wallets (address, private_key, created_at, status, derivation_index, derivation_path)
+		VALUES (?, ?, ?, 0, ?, ?)
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("prepare statement: %w", err)
@@ -176,7 +230,17 @@ func (s *SQLiteStorage) SaveWallets(ctx context.Context, wallets []*wallet.Walle
 	now := time.Now().UTC().Format(time.RFC3339)
 
 	for _, w := range wallets {
-		result, err := stmt.ExecContext(ctx, w.Address, w.PrivateKey, now)
+		var derivationIndex interface{}
+		var derivationPath interface{}
+
+		if w.DerivationIndex != nil {
+			derivationIndex = *w.DerivationIndex
+		}
+		if w.DerivationPath != "" {
+			derivationPath = w.DerivationPath
+		}
+
+		result, err := stmt.ExecContext(ctx, w.Address, w.PrivateKey, now, derivationIndex, derivationPath)
 		if err != nil {
 			return nil, fmt.Errorf("insert wallet: %w", err)
 		}
@@ -202,9 +266,11 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 	var record storage.WalletRecord
 	var metadataJSON sql.NullString
 	var createdAt sql.NullString
+	var derivationIndex sql.NullInt32
+	var derivationPath sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, address, private_key, created_at, status, metadata
+		SELECT id, address, private_key, created_at, status, metadata, derivation_index, derivation_path
 		FROM wallets
 		WHERE id = ?
 	`, id).Scan(
@@ -214,6 +280,8 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 		&createdAt,
 		&record.Status,
 		&metadataJSON,
+		&derivationIndex,
+		&derivationPath,
 	)
 
 	if err == sql.ErrNoRows {
@@ -235,6 +303,15 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 		}
 	}
 
+	// Populate derivation fields if present
+	if derivationIndex.Valid {
+		idx := uint32(derivationIndex.Int32)
+		record.DerivationIndex = &idx
+	}
+	if derivationPath.Valid {
+		record.DerivationPath = derivationPath.String
+	}
+
 	return &record, nil
 }
 
@@ -243,9 +320,11 @@ func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) 
 	var record storage.WalletRecord
 	var metadataJSON sql.NullString
 	var createdAt sql.NullString
+	var derivationIndex sql.NullInt32
+	var derivationPath sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, address, private_key, created_at, status, metadata
+		SELECT id, address, private_key, created_at, status, metadata, derivation_index, derivation_path
 		FROM wallets
 		WHERE address = ?
 	`, address).Scan(
@@ -255,6 +334,8 @@ func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) 
 		&createdAt,
 		&record.Status,
 		&metadataJSON,
+		&derivationIndex,
+		&derivationPath,
 	)
 
 	if err == sql.ErrNoRows {
@@ -274,6 +355,15 @@ func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) 
 		if err := json.Unmarshal([]byte(metadataJSON.String), &record.Metadata); err != nil {
 			return nil, fmt.Errorf("parse metadata: %w", err)
 		}
+	}
+
+	// Populate derivation fields if present
+	if derivationIndex.Valid {
+		idx := uint32(derivationIndex.Int32)
+		record.DerivationIndex = &idx
+	}
+	if derivationPath.Valid {
+		record.DerivationPath = derivationPath.String
 	}
 
 	return &record, nil

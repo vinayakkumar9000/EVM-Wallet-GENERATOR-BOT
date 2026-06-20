@@ -13,8 +13,10 @@ import (
 
 // Wallet holds the raw binary representation of an EVM key-pair.
 type Wallet struct {
-	Address    []byte // 20 bytes — Ethereum address (last 20 bytes of keccak256(pubkey))
-	PrivateKey []byte // 32 bytes — raw secp256k1 scalar
+	Address         []byte  // 20 bytes — Ethereum address (last 20 bytes of keccak256(pubkey))
+	PrivateKey      []byte  // 32 bytes — raw secp256k1 scalar
+	DerivationIndex *uint32 // Optional: BIP-44 derivation index (nil for random wallets)
+	DerivationPath  string  // Optional: BIP-44 derivation path (empty for random wallets)
 }
 
 // Generate creates a new random EVM wallet.
