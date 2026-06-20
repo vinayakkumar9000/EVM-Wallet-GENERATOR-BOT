@@ -133,6 +133,9 @@ func (p *ProgressTracker) Finish(done int) {
 	if elapsed.Seconds() > 0 {
 		avgRate = float64(done) / elapsed.Seconds()
 	}
+	if done > 0 && avgRate > p.peakRate {
+		p.peakRate = avgRate
+	}
 
 	fmt.Printf("\n%s\n", Success("✓ Generation complete"))
 	fmt.Printf("  %s wallets in %s\n",

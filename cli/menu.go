@@ -119,7 +119,7 @@ func handleGenerateMenu(ctx context.Context, store storage.Storage, cfg *config.
 			return
 		}
 
-		fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, core.FormatNumber(total))))
+		fmt.Print(core.Info("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, core.FormatNumber(total)))
 		generateWallets(ctx, store, cfg, total)
 		return
 	}
@@ -521,7 +521,7 @@ func validateBatchSize(batchSize int) error {
 
 func generateWallets(ctx context.Context, store storage.Storage, cfg *config.Config, total int) {
 	// Show preview for the run
-	previewGenerationRun(cfg, total)
+	previewGenerationRun(cfg, store, total)
 
 	// Ask for confirmation if total exceeds threshold (10,000 wallets)
 	if total > 10000 {
@@ -600,20 +600,20 @@ func handleDatabaseHealth(ctx context.Context, store storage.Storage) {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 func printBanner() {
+	const innerW = 55
+
 	title := core.Highlight("EVM WALLET MANAGER") + " v1.0"
 	subtitle := core.Hint("Multi-chain · Embedded SQLite · Go")
 	chains := core.Info("ETH · BSC · Polygon · Arbitrum · Optimism · Base")
 
-	fmt.Printf(`
-  ╔═══════════════════════════════════════════════════════╗
-  ║                                                       ║
-  ║         %s                   ║
-  ║         %s             ║
-  ║                                                       ║
-  ║   %s       ║
-  ║                                                       ║
-  ╚═══════════════════════════════════════════════════════╝
-`, title, subtitle, chains)
+	fmt.Println(core.BoxTop(innerW))
+	fmt.Println(core.BoxRow(innerW, "", 0))
+	fmt.Println(core.BoxRow(innerW, title, 0))
+	fmt.Println(core.BoxRow(innerW, subtitle, 0))
+	fmt.Println(core.BoxRow(innerW, "", 0))
+	fmt.Println(core.BoxRow(innerW, chains, 0))
+	fmt.Println(core.BoxRow(innerW, "", 0))
+	fmt.Println(core.BoxBottom(innerW))
 }
 
 // normalizeMenuChoice converts letter shortcuts to number choices.
@@ -644,8 +644,8 @@ func printMenu(cfg *config.Config) {
 	title := core.Highlight("MAIN MENU")
 
 	// Generate hint showing current settings
-	genHint := core.Hint(fmt.Sprintf("batch %d", cfg.BatchSize))
-	settingsHint := core.Hint(fmt.Sprintf("%d workers", cfg.Workers))
+	genHint := core.Hint("batch %d", cfg.BatchSize)
+	settingsHint := core.Hint("%d workers", cfg.Workers)
 
 	fmt.Printf(`
   ┌──────────────────────────────────────────────────────┐
@@ -871,7 +871,7 @@ func resetSessionSettings(cfg *config.Config, originalCfg *config.Config) {
 
 // ─── Generation Preview & Confirmation ────────────────────────────────────────
 
-func previewGenerationRun(cfg *config.Config, total int) {
+func previewGenerationRun(cfg *config.Config, store storage.Storage, total int) {
 	batches := (total + cfg.BatchSize - 1) / cfg.BatchSize // Ceiling division
 	loggingStatus := "enabled"
 	if !cfg.EnableLogging {
@@ -887,7 +887,7 @@ func previewGenerationRun(cfg *config.Config, total int) {
   │  Workers        : %-33d │
   │  Batch size     : %-33d │
   │  Insert batches : %-33d │
-  │  Database       : %-33s │
+  │  Storage        : %-33s │
   │  Logging        : %-33s │
   └──────────────────────────────────────────────────────┘
 `,
@@ -896,7 +896,7 @@ func previewGenerationRun(cfg *config.Config, total int) {
 		cfg.Workers,
 		cfg.BatchSize,
 		batches,
-		cfg.DBName,
+		storage.StorageLabel(store, cfg),
 		loggingStatus,
 	)
 }
@@ -917,8 +917,8 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
 
 	// Skip detailed summary in minimal UI mode
 	if isMinimalUI(cfg) {
-		fmt.Printf(core.Info(fmt.Sprintf("[INFO] ✓ Generated %s wallets in %s (~%.0f wallets/sec)\n\n",
-			core.FormatNumber(total), elapsed.Round(time.Millisecond), walletsPerSec)))
+		fmt.Print(core.Info("[INFO] ✓ Generated %s wallets in %s (~%.0f wallets/sec)\n\n",
+			core.FormatNumber(total), elapsed.Round(time.Millisecond), walletsPerSec))
 		return
 	}
 
@@ -1590,37 +1590,40 @@ func showSettingsHelp() {
 // ─── First-Run Tips ───────────────────────────────────────────────────────────
 
 func showFirstRunTips(reader *bufio.Reader, cfg *config.Config) {
-	fmt.Printf(`
-  ╔══════════════════════════════════════════════════════════════╗
-  ║                    WELCOME TO EVM WALLET MANAGER             ║
-  ╠══════════════════════════════════════════════════════════════╣
-  ║                                                              ║
-  ║  Quick Start Tips:                                           ║
-  ║                                                              ║
-  ║  1. Start Small                                              ║
-  ║     Try generating 1,000-10,000 wallets first to test       ║
-  ║     your system's performance.                               ║
-  ║                                                              ║
-  ║  2. Use Letter Shortcuts                                     ║
-  ║     Press 'G' for Generate, 'S' for Stats, 'Q' to Quit      ║
-  ║     Much faster than typing numbers!                         ║
-  ║                                                              ║
-  ║  3. Monitor Performance                                      ║
-  ║     Check Statistics (S) to see generation speed             ║
-  ║     Use Benchmark (B) to optimize your settings              ║
-  ║                                                              ║
-  ║  4. Current Settings                                         ║
-  ║     Workers: %-2d  |  Batch Size: %-4d  |  UI: %-8s    ║
-  ║                                                              ║
-  ║  5. Get Help Anytime                                         ║
-  ║     Press 'H' from main menu for detailed guides             ║
-  ║                                                              ║
-  ║  Tip: You can disable these tips in Configuration menu      ║
-  ║                                                              ║
-  ╚══════════════════════════════════════════════════════════════╝
+	const innerW = 62
 
-  %s
-`, cfg.Workers, cfg.BatchSize, cfg.UIMode, core.Hint("Press Enter to continue..."))
+	settingsLine := fmt.Sprintf("Workers: %d  |  Batch Size: %d  |  UI: %s",
+		cfg.Workers, cfg.BatchSize, cfg.UIMode)
+
+	fmt.Println(core.BoxTop(innerW))
+	fmt.Println(core.BoxRow(innerW, "WELCOME TO EVM WALLET MANAGER", 0))
+	fmt.Println("  ╠" + strings.Repeat("═", innerW) + "╣")
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "Quick Start Tips:", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "1. Start Small", -1))
+	fmt.Println(core.BoxRow(innerW, "Try generating 1,000-10,000 wallets first to test", -1))
+	fmt.Println(core.BoxRow(innerW, "your system's performance.", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "2. Use Letter Shortcuts", -1))
+	fmt.Println(core.BoxRow(innerW, "Press 'G' for Generate, 'S' for Stats, 'Q' to Quit", -1))
+	fmt.Println(core.BoxRow(innerW, "Much faster than typing numbers!", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "3. Monitor Performance", -1))
+	fmt.Println(core.BoxRow(innerW, "Check Statistics (S) to see generation speed", -1))
+	fmt.Println(core.BoxRow(innerW, "Use Benchmark (B) to optimize your settings", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "4. Current Settings", -1))
+	fmt.Println(core.BoxRow(innerW, settingsLine, -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "5. Get Help Anytime", -1))
+	fmt.Println(core.BoxRow(innerW, "Press 'H' from main menu for detailed guides", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxRow(innerW, "Tip: You can disable these tips in Configuration menu", -1))
+	fmt.Println(core.BoxRow(innerW, "", -1))
+	fmt.Println(core.BoxBottom(innerW))
+	fmt.Println()
+	fmt.Println(core.Hint("Press Enter to continue..."))
 
 	readLine(reader)
 	core.ClearScreenIfEnabled()
