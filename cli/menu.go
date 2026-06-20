@@ -11,16 +11,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"evmwalletbot/config"
 	"evmwalletbot/core"
+	"evmwalletbot/storage"
 	"evmwalletbot/wallet"
 )
 
 // Run is the main entry point for the interactive CLI.
-func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
+func Run(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	reader := bufio.NewReader(os.Stdin)
 
 	// Clear screen and show banner on startup
@@ -42,7 +40,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 		}
 
 		// Show status strip
-		if strip, err := GetStatusStrip(ctx, pool, cfg); err == nil {
+		if strip, err := GetStatusStrip(ctx, store, cfg); err == nil {
 			strip.Render()
 		}
 
@@ -54,21 +52,21 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 
 		switch choice {
 		case "1":
-			handleGenerateMenu(ctx, pool, cfg, reader)
+			handleGenerateMenu(ctx, store, cfg, reader)
 		case "2":
-			handleStatsMenu(ctx, pool, reader)
+			handleStatsMenu(ctx, store, reader)
 		case "3":
-			handleLookupMenu(ctx, pool, reader)
+			handleLookupMenu(ctx, store, reader)
 		case "4":
-			handleDatabaseMenu(ctx, pool, reader)
+			handleDatabaseMenu(ctx, store, reader)
 		case "5":
-			handleBenchmarkMenu(ctx, pool, cfg, reader)
+			handleBenchmarkMenu(ctx, store, cfg, reader)
 		case "6":
 			handleConfigMenu(cfg, reader)
 		case "8":
 			handleHelpMenu(reader)
 		case "9":
-			handleVanityMenu(ctx, pool, cfg, reader)
+			handleVanityMenu(ctx, store, cfg, reader)
 		case "0":
 			fmt.Println(core.Info("\n[INFO] Goodbye."))
 			return
@@ -80,7 +78,7 @@ func Run(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
 
 // ─── Menu handlers ────────────────────────────────────────────────────────────
 
-func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleGenerateMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	// Flattened: Direct inline prompts instead of submenu
 	core.ClearScreenIfEnabled()
 
@@ -96,7 +94,7 @@ func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 
 	if input == "s" || input == "settings" {
 		changeGenerationSettings(cfg, reader)
-		handleGenerateMenu(ctx, pool, cfg, reader) // Recursive call to show menu again
+		handleGenerateMenu(ctx, store, cfg, reader) // Recursive call to show menu again
 		return
 	}
 
@@ -122,7 +120,7 @@ func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 		}
 
 		fmt.Printf(core.Info(fmt.Sprintf("\n[INFO] %d batches × %d wallets = %s wallets\n", batches, cfg.BatchSize, core.FormatNumber(total))))
-		generateWallets(ctx, pool, cfg, total)
+		generateWallets(ctx, store, cfg, total)
 		return
 	}
 
@@ -135,15 +133,15 @@ func handleGenerateMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Con
 		return
 	}
 
-	generateWallets(ctx, pool, cfg, count)
+	generateWallets(ctx, store, cfg, count)
 }
 
-func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleStatsMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	// Flattened: Show stats immediately with action options
 	core.ClearScreenIfEnabled()
 
 	// Show stats immediately
-	handleStats(ctx, pool)
+	handleStats(ctx, store)
 
 	// Offer quick actions
 	fmt.Printf("\n  %s watch live   %s database size   %s refresh   %s back\n",
@@ -154,13 +152,13 @@ func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Read
 
 	switch choice {
 	case "w", "watch":
-		watchStatsLive(ctx, pool)
+		watchStatsLive(ctx, store)
 	case "d", "size":
-		showDatabaseSize(ctx, pool)
+		showDatabaseSize(ctx, store)
 		fmt.Print("\n  Press Enter to continue...")
 		readLine(reader)
 	case "r", "refresh":
-		handleStatsMenu(ctx, pool, reader) // Recursive refresh
+		handleStatsMenu(ctx, store, reader) // Recursive refresh
 	case "":
 		return // Back to main menu
 	default:
@@ -168,11 +166,11 @@ func handleStatsMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Read
 	}
 }
 
-func handleLookupMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
-	handleWalletInfo(ctx, pool, reader)
+func handleLookupMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
+	handleWalletInfo(ctx, store, reader)
 }
 
-func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleDatabaseMenu(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	// Combined Database + Monitoring menu (Tier 2 flattening)
 	for {
 		core.ClearScreenIfEnabled()
@@ -193,25 +191,25 @@ func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.R
 
 		switch strings.TrimSpace(readLine(reader)) {
 		case "1":
-			handleDatabaseHealth(ctx, pool)
+			handleDatabaseHealth(ctx, store)
 		case "2":
-			showPoolStatus(pool)
+			showPoolStatus(store)
 			fmt.Print("\n  Press Enter to continue...")
 			readLine(reader)
 		case "3":
-			watchPoolStatusLive(ctx, pool, 5)
+			watchPoolStatusLive(ctx, store, 5)
 		case "4":
-			watchWalletStatsLive(ctx, pool, 5)
+			watchWalletStatsLive(ctx, store, 5)
 		case "5":
-			recordHealthSnapshot(ctx, pool)
+			recordHealthSnapshot(ctx, store)
 			fmt.Print("\n  Press Enter to continue...")
 			readLine(reader)
 		case "6":
-			showMaintenanceRecommendations(ctx, pool)
+			showMaintenanceRecommendations(ctx, store)
 			fmt.Print("\n  Press Enter to continue...")
 			readLine(reader)
 		case "7":
-			showDatabaseSize(ctx, pool)
+			showDatabaseSize(ctx, store)
 			fmt.Print("\n  Press Enter to continue...")
 			readLine(reader)
 		case "8":
@@ -222,7 +220,7 @@ func handleDatabaseMenu(ctx context.Context, pool *pgxpool.Pool, reader *bufio.R
 	}
 }
 
-func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleVanityMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	core.ClearScreenIfEnabled()
 
 	fmt.Printf("\n%s\n", core.Highlight("VANITY ADDRESS GENERATION"))
@@ -300,7 +298,7 @@ func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Confi
 	}
 
 	// Generate vanity wallets
-	if err := core.GenerateVanityWallets(ctx, pool, cfg, vanityConfig); err != nil {
+	if err := core.GenerateVanityWallets(ctx, store, cfg, vanityConfig); err != nil {
 		fmt.Print(core.Error("\n[ERROR] Vanity generation failed: %v\n", err))
 	}
 
@@ -308,7 +306,7 @@ func handleVanityMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Confi
 	readLine(reader)
 }
 
-func handleBenchmarkMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, reader *bufio.Reader) {
+func handleBenchmarkMenu(ctx context.Context, store storage.Storage, cfg *config.Config, reader *bufio.Reader) {
 	for {
 		fmt.Print(`
   ┌────────────────────────────────────────────┐
@@ -325,11 +323,11 @@ func handleBenchmarkMenu(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 		case "1":
 			estimateSettings(cfg)
 		case "2":
-			runSmallBenchmark(ctx, pool, cfg)
+			runSmallBenchmark(ctx, store, cfg)
 		case "3":
-			compareWorkerCounts(ctx, pool, cfg)
+			compareWorkerCounts(ctx, store, cfg)
 		case "4":
-			compareBatchSizes(ctx, pool, cfg)
+			compareBatchSizes(ctx, store, cfg)
 		case "5":
 			return
 		default:
@@ -521,7 +519,7 @@ func validateBatchSize(batchSize int) error {
 	return nil
 }
 
-func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, total int) {
+func generateWallets(ctx context.Context, store storage.Storage, cfg *config.Config, total int) {
 	// Show preview for the run
 	previewGenerationRun(cfg, total)
 
@@ -538,7 +536,7 @@ func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 
 	start := time.Now()
 
-	if err := core.GenerateWallets(ctx, pool, cfg, total); err != nil {
+	if err := core.GenerateWallets(ctx, store, cfg, total); err != nil {
 		fmt.Print(core.Error("\n[ERROR] Generation failed: %v\n", err))
 		return
 	}
@@ -549,10 +547,10 @@ func generateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	showCompletionSummary(total, elapsed, cfg)
 }
 
-func handleStats(ctx context.Context, pool *pgxpool.Pool) {
+func handleStats(ctx context.Context, store storage.Storage) {
 	fmt.Println(core.Info("\n[INFO] Loading statistics..."))
 
-	s, err := core.GetStats(ctx, pool)
+	s, err := core.GetStats(ctx, store)
 	if err != nil {
 		fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
 		return
@@ -560,7 +558,7 @@ func handleStats(ctx context.Context, pool *pgxpool.Pool) {
 	core.PrintStats(s)
 }
 
-func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Reader) {
+func handleWalletInfo(ctx context.Context, store storage.Storage, reader *bufio.Reader) {
 	fmt.Print("\n  Enter wallet ID (numeric): ")
 	input := strings.TrimSpace(readLine(reader))
 
@@ -570,31 +568,11 @@ func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
 		return
 	}
 
-	type walletRow struct {
-		ID        int64
-		Address   []byte
-		CreatedAt time.Time
-		Status    int
-	}
-
-	var w walletRow
-	err = pool.QueryRow(ctx, `
-		SELECT id, address, created_at, status
-		FROM wallets
-		WHERE id = $1
-	`, id).Scan(&w.ID, &w.Address, &w.CreatedAt, &w.Status)
-
-	if err == pgx.ErrNoRows {
+	record, err := store.GetWalletByID(ctx, id)
+	if err != nil {
 		fmt.Print(core.Warning("\n[WARN] No wallet found with ID %d.\n", id))
 		return
 	}
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Query failed: %v\n", err))
-		return
-	}
-
-	var eventCount int64
-	_ = pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallet_events WHERE wallet_id = $1`, id).Scan(&eventCount)
 
 	fmt.Printf(`
   ╔══════════════════════════════════════════════════════╗
@@ -604,19 +582,17 @@ func handleWalletInfo(ctx context.Context, pool *pgxpool.Pool, reader *bufio.Rea
   ║  Address     : 0x%-34s ║
   ║  Status      : %-36s ║
   ║  Created at  : %-36s ║
-  ║  Events      : %-36d ║
   ╚══════════════════════════════════════════════════════╝
 `,
-		w.ID,
-		hex.EncodeToString(w.Address),
-		statusLabel(w.Status),
-		w.CreatedAt.Format("2006-01-02 15:04:05 UTC"),
-		eventCount,
+		record.ID,
+		hex.EncodeToString(record.Address),
+		statusLabel(record.Status),
+		record.CreatedAt.Format("2006-01-02 15:04:05 UTC"),
 	)
 }
 
-func handleDatabaseHealth(ctx context.Context, pool *pgxpool.Pool) {
-	if err := core.RunHealthCheck(ctx, pool); err != nil {
+func handleDatabaseHealth(ctx context.Context, store storage.Storage) {
+	if err := core.RunHealthCheck(ctx, store); err != nil {
 		fmt.Print(core.Error("[ERROR] Health check failed: %v\n", err))
 	}
 }
@@ -625,7 +601,7 @@ func handleDatabaseHealth(ctx context.Context, pool *pgxpool.Pool) {
 
 func printBanner() {
 	title := core.Highlight("EVM WALLET MANAGER") + " v1.0"
-	subtitle := core.Hint("Multi-chain · PostgreSQL · Go")
+	subtitle := core.Hint("Multi-chain · Embedded SQLite · Go")
 	chains := core.Info("ETH · BSC · Polygon · Arbitrum · Optimism · Base")
 
 	fmt.Printf(`
@@ -980,7 +956,7 @@ func showCompletionSummary(total int, elapsed time.Duration, cfg *config.Config)
 
 // ─── Statistics Menu Helpers ──────────────────────────────────────────────────
 
-func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
+func watchStatsLive(ctx context.Context, store storage.Storage) {
 	fmt.Println(core.Info("\n[INFO] Starting live stats watch (press Ctrl+C to stop)..."))
 	fmt.Println("       Refreshing every 5 seconds")
 
@@ -988,7 +964,7 @@ func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 	defer ticker.Stop()
 
 	// Show initial stats
-	s, err := core.GetStats(ctx, pool)
+	s, err := core.GetStats(ctx, store)
 	if err != nil {
 		fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
 		return
@@ -1015,7 +991,7 @@ func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 			// Clear screen (ANSI escape code)
 			fmt.Print("\033[H\033[2J")
 
-			s, err := core.GetStats(ctx, pool)
+			s, err := core.GetStats(ctx, store)
 			if err != nil {
 				fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
 				return
@@ -1026,67 +1002,41 @@ func watchStatsLive(ctx context.Context, pool *pgxpool.Pool) {
 	}
 }
 
-func showDatabaseSize(ctx context.Context, pool *pgxpool.Pool) {
-	fmt.Println(core.Info("\n[INFO] Loading database size information..."))
+func showDatabaseSize(ctx context.Context, store storage.Storage) {
+	fmt.Println(core.Info("\n[INFO] Loading storage size information..."))
 
-	var dbSize string
-	err := pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_database_size($1))`, "walletdb").Scan(&dbSize)
+	stats, err := core.GetStats(ctx, store)
 	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not get database size: %v\n", err))
+		fmt.Print(core.Error("[ERROR] Could not get storage stats: %v\n", err))
 		return
-	}
-
-	var walletTableSize, walletIndexSize string
-	err = pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_total_relation_size('wallets'))`).Scan(&walletTableSize)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not get wallets table size: %v\n", err))
-		return
-	}
-
-	err = pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_indexes_size('wallets'))`).Scan(&walletIndexSize)
-	if err != nil {
-		fmt.Print(core.Error("[ERROR] Could not get wallets index size: %v\n", err))
-		return
-	}
-
-	var eventsTableSize string
-	err = pool.QueryRow(ctx, `SELECT pg_size_pretty(pg_total_relation_size('wallet_events'))`).Scan(&eventsTableSize)
-	if err != nil {
-		// Table might not exist, that's okay
-		eventsTableSize = "N/A"
 	}
 
 	fmt.Printf(`
   ┌──────────────────────────────────────────────────────┐
-  │                DATABASE SIZE                         │
+  │                STORAGE SIZE                          │
   ├──────────────────────────────────────────────────────┤
-  │  Total database   : %-33s │
-  │  Wallets table    : %-33s │
-  │  Wallets indexes  : %-33s │
-  │  Events table     : %-33s │
+  │  Backend          : %-33s │
+  │  Total wallets    : %-33d │
+  │  Storage size     : %-33s │
   └──────────────────────────────────────────────────────┘
 `,
-		dbSize,
-		walletTableSize,
-		walletIndexSize,
-		eventsTableSize,
+		store.StorageType(),
+		stats.TotalWallets,
+		core.FormatBytes(stats.DBSizeBytes),
 	)
 }
 
 // ─── Database Tools Menu Helpers ──────────────────────────────────────────────
 
-func showPoolStatus(pool *pgxpool.Pool) {
-	stat := pool.Stat()
-
-	totalConns := stat.TotalConns()
-	idleConns := stat.IdleConns()
-	acquiredConns := stat.AcquiredConns()
-	maxConns := stat.MaxConns()
-
-	usagePercent := 0.0
-	if maxConns > 0 {
-		usagePercent = float64(acquiredConns) / float64(maxConns) * 100
+func showPoolStatus(store storage.Storage) {
+	stats := store.GetPoolStats()
+	if stats == nil {
+		fmt.Println(core.Info("\n[INFO] Connection pooling is not used with the embedded SQLite backend."))
+		fmt.Println("       Pool monitoring is available when using PostgreSQL (-storage postgres).")
+		return
 	}
+
+	usagePercent := stats.Usage() * 100
 
 	fmt.Printf(`
   ┌──────────────────────────────────────────────────────┐
@@ -1099,10 +1049,10 @@ func showPoolStatus(pool *pgxpool.Pool) {
   │  Usage                : %-26.1f%% │
   └──────────────────────────────────────────────────────┘
 `,
-		totalConns,
-		idleConns,
-		acquiredConns,
-		maxConns,
+		stats.TotalConns,
+		stats.IdleConns,
+		stats.AcquiredConns,
+		stats.MaxConns,
 		usagePercent,
 	)
 
@@ -1111,7 +1061,7 @@ func showPoolStatus(pool *pgxpool.Pool) {
 	}
 }
 
-func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
+func recordHealthSnapshot(ctx context.Context, store storage.Storage) {
 	timestamp := time.Now().Format("20060102_150405")
 	filename := fmt.Sprintf("health_snapshot_%s.txt", timestamp)
 
@@ -1131,51 +1081,47 @@ func recordHealthSnapshot(ctx context.Context, pool *pgxpool.Pool) {
 	fmt.Fprintf(file, "========================================\n\n")
 
 	// Run health check
-	if err := core.RunHealthCheck(ctx, pool); err != nil {
+	if err := core.RunHealthCheck(ctx, store); err != nil {
 		fmt.Fprintf(file, "[ERROR] Health check failed: %v\n", err)
 	}
 
-	// Add pool status
-	fmt.Fprintf(file, "\nConnection Pool Status:\n")
-	stat := pool.Stat()
-	fmt.Fprintf(file, "  Total connections: %d\n", stat.TotalConns())
-	fmt.Fprintf(file, "  Idle connections: %d\n", stat.IdleConns())
-	fmt.Fprintf(file, "  Acquired connections: %d\n", stat.AcquiredConns())
-	fmt.Fprintf(file, "  Max connections: %d\n", stat.MaxConns())
+	if stats := store.GetPoolStats(); stats != nil {
+		fmt.Fprintf(file, "\nConnection Pool Status:\n")
+		fmt.Fprintf(file, "  Total connections: %d\n", stats.TotalConns)
+		fmt.Fprintf(file, "  Idle connections: %d\n", stats.IdleConns)
+		fmt.Fprintf(file, "  Acquired connections: %d\n", stats.AcquiredConns)
+		fmt.Fprintf(file, "  Max connections: %d\n", stats.MaxConns)
+	}
 	fmt.Print(core.Info("\n[INFO] Health snapshot saved to: %s\n", filename))
 }
 
-func showMaintenanceRecommendations(ctx context.Context, pool *pgxpool.Pool) {
-	fmt.Println(core.Info("\n[INFO] Analyzing database for maintenance recommendations..."))
+func showMaintenanceRecommendations(ctx context.Context, store storage.Storage) {
+	fmt.Println(core.Info("\n[INFO] Analyzing storage for maintenance recommendations..."))
 
-	// Check table bloat
-	var walletCount int64
-	err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM wallets`).Scan(&walletCount)
+	walletCount, err := store.CountWallets(ctx)
 	if err != nil {
 		fmt.Print(core.Error("[ERROR] Could not count wallets: %v\n", err))
 		return
 	}
 
-	// Check last vacuum
-	var lastVacuum *time.Time
-	err = pool.QueryRow(ctx, `
-		SELECT last_vacuum 
-		FROM pg_stat_user_tables 
-		WHERE relname = 'wallets'
-	`).Scan(&lastVacuum)
-	if err != nil {
-		fmt.Print(core.Warning("[WARN] Could not check last vacuum time: %v\n", err))
-	}
+	if store.StorageType() != "postgres" {
+		fmt.Printf(`
+  ┌──────────────────────────────────────────────────────┐
+  │         MAINTENANCE RECOMMENDATIONS                  │
+  ├──────────────────────────────────────────────────────┤
+  │  Total wallets: %-37d │
+  │  Backend      : %-37s │
+  └──────────────────────────────────────────────────────┘
 
-	// Check last analyze
-	var lastAnalyze *time.Time
-	err = pool.QueryRow(ctx, `
-		SELECT last_analyze 
-		FROM pg_stat_user_tables 
-		WHERE relname = 'wallets'
-	`).Scan(&lastAnalyze)
-	if err != nil {
-		fmt.Print(core.Warning("[WARN] Could not check last analyze time: %v\n", err))
+  Recommendations:
+  ✓ Embedded SQLite requires no vacuum or server maintenance
+  ✓ Back up the wallets.db file periodically if data is important
+`,
+			walletCount,
+			store.StorageType(),
+		)
+		fmt.Println()
+		return
 	}
 
 	fmt.Printf(`
@@ -1186,37 +1132,17 @@ func showMaintenanceRecommendations(ctx context.Context, pool *pgxpool.Pool) {
   └──────────────────────────────────────────────────────┘
 
   Recommendations:
+  • PostgreSQL backend: run VACUUM ANALYZE periodically on large datasets
+  • Monitor connection pool usage from the Database menu
 `,
 		walletCount,
 	)
-
-	// Provide recommendations
-	if walletCount > 1000000 {
-		fmt.Println("  • Consider running VACUUM ANALYZE on wallets table")
-		fmt.Println("    Command: VACUUM ANALYZE wallets;")
-	}
-
-	if lastVacuum == nil || time.Since(*lastVacuum) > 7*24*time.Hour {
-		fmt.Println("  • Wallets table hasn't been vacuumed recently")
-		fmt.Println("    Run: VACUUM wallets;")
-	}
-
-	if lastAnalyze == nil || time.Since(*lastAnalyze) > 7*24*time.Hour {
-		fmt.Println("  • Table statistics may be outdated")
-		fmt.Println("    Run: ANALYZE wallets;")
-	}
-
-	if walletCount < 100000 {
-		fmt.Println("  ✓ Database is in good health")
-		fmt.Println("  ✓ No maintenance required at this time")
-	}
-
 	fmt.Println()
 }
 
 // ─── Monitoring Menu Helpers ──────────────────────────────────────────────────
 
-func watchPoolStatusLive(ctx context.Context, pool *pgxpool.Pool, interval int) {
+func watchPoolStatusLive(ctx context.Context, store storage.Storage, interval int) {
 	fmt.Print(core.Info("\n[INFO] Starting live pool status watch (press Enter to stop)...\n"))
 	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
 
@@ -1224,7 +1150,7 @@ func watchPoolStatusLive(ctx context.Context, pool *pgxpool.Pool, interval int) 
 	defer ticker.Stop()
 
 	// Show initial status
-	showPoolStatus(pool)
+	showPoolStatus(store)
 
 	// Create a channel to detect user interrupt
 	done := make(chan bool)
@@ -1246,13 +1172,13 @@ func watchPoolStatusLive(ctx context.Context, pool *pgxpool.Pool, interval int) 
 			// Clear screen (ANSI escape code)
 			fmt.Print("\033[H\033[2J")
 
-			showPoolStatus(pool)
+			showPoolStatus(store)
 			fmt.Println(core.Info("\n[INFO] Press Enter to stop watching..."))
 		}
 	}
 }
 
-func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int) {
+func watchWalletStatsLive(ctx context.Context, store storage.Storage, interval int) {
 	fmt.Print(core.Info("\n[INFO] Starting live wallet stats watch (press Enter to stop)...\n"))
 	fmt.Printf("       Refreshing every %d seconds\n\n", interval)
 
@@ -1260,7 +1186,7 @@ func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int)
 	defer ticker.Stop()
 
 	// Show initial stats
-	s, err := core.GetStats(ctx, pool)
+	s, err := core.GetStats(ctx, store)
 	if err != nil {
 		fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
 		return
@@ -1287,7 +1213,7 @@ func watchWalletStatsLive(ctx context.Context, pool *pgxpool.Pool, interval int)
 			// Clear screen (ANSI escape code)
 			fmt.Print("\033[H\033[2J")
 
-			s, err := core.GetStats(ctx, pool)
+			s, err := core.GetStats(ctx, store)
 			if err != nil {
 				fmt.Print(core.Error("[ERROR] Could not load stats: %v\n", err))
 				return
@@ -1347,7 +1273,7 @@ func estimateSettings(cfg *config.Config) {
 	fmt.Println()
 }
 
-func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
+func runSmallBenchmark(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Running small benchmark (1000 wallets)..."))
 	fmt.Println("       This will measure actual performance on your system.")
 
@@ -1357,7 +1283,7 @@ func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 
 	start := time.Now()
 
-	if err := core.GenerateWallets(ctx, pool, cfg, 1000); err != nil {
+	if err := core.GenerateWallets(ctx, store, cfg, 1000); err != nil {
 		fmt.Print(core.Error("[ERROR] Benchmark failed: %v\n", err))
 		cfg.BatchSize = originalBatchSize
 		return
@@ -1381,7 +1307,7 @@ func runSmallBenchmark(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 `, elapsed.Round(time.Millisecond), walletsPerSec, "", cfg.Workers)
 }
 
-func compareWorkerCounts(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
+func compareWorkerCounts(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different worker counts..."))
 	fmt.Println("       Testing with 500 wallets each")
 
@@ -1397,7 +1323,7 @@ func compareWorkerCounts(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 		fmt.Printf("  Testing %d workers... ", workers)
 
 		start := time.Now()
-		if err := core.GenerateWallets(ctx, pool, cfg, 500); err != nil {
+		if err := core.GenerateWallets(ctx, store, cfg, 500); err != nil {
 			fmt.Printf("failed: %v\n", err)
 			continue
 		}
@@ -1416,7 +1342,7 @@ func compareWorkerCounts(ctx context.Context, pool *pgxpool.Pool, cfg *config.Co
 	fmt.Println("                  that doesn't exceed your CPU capacity.")
 }
 
-func compareBatchSizes(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) {
+func compareBatchSizes(ctx context.Context, store storage.Storage, cfg *config.Config) {
 	fmt.Println(core.Info("\n[INFO] Comparing different batch sizes..."))
 	fmt.Println("       Testing with 1000 wallets each")
 
@@ -1430,7 +1356,7 @@ func compareBatchSizes(ctx context.Context, pool *pgxpool.Pool, cfg *config.Conf
 		fmt.Printf("  Testing batch size %d... ", batchSize)
 
 		start := time.Now()
-		if err := core.GenerateWallets(ctx, pool, cfg, 1000); err != nil {
+		if err := core.GenerateWallets(ctx, store, cfg, 1000); err != nil {
 			fmt.Printf("failed: %v\n", err)
 			continue
 		}

@@ -5,47 +5,49 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"evmwalletbot/config"
 	"evmwalletbot/core"
+	"evmwalletbot/storage"
 )
 
 // StatusStrip displays current system state on the home screen.
 type StatusStrip struct {
 	WalletCount int64
 	LastRunRate int
-	DBName      string
+	StorageInfo string
 }
 
-// GetStatusStrip retrieves current system status from the database.
-func GetStatusStrip(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config) (*StatusStrip, error) {
-	var count int64
-	err := pool.QueryRow(ctx, "SELECT COUNT(*) FROM wallets").Scan(&count)
+// GetStatusStrip retrieves current system status from storage.
+func GetStatusStrip(ctx context.Context, store storage.Storage, cfg *config.Config) (*StatusStrip, error) {
+	count, err := store.CountWallets(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// ponytail: Simple status strip without persistent rate tracking
-	// Ceiling: No rate history. Upgrade: Add simple file-based cache if needed.
+	label := store.StorageType()
+	if cfg.StorageType == "postgres" {
+		label = fmt.Sprintf("postgres (%s)", cfg.DBName)
+	} else if cfg.DataDir != "" {
+		label = fmt.Sprintf("sqlite (%s)", cfg.DataDir)
+	}
+
 	return &StatusStrip{
 		WalletCount: count,
-		LastRunRate: 0, // No persistent tracking yet
-		DBName:      cfg.DBName,
+		LastRunRate: 0,
+		StorageInfo: label,
 	}, nil
 }
 
 // Render displays the status strip with color coding.
 func (s *StatusStrip) Render() {
 	if !core.IsColorEnabled() {
-		// Fallback: plain text
-		fmt.Printf("Status: %s wallets in %s\n\n", formatNumber(int(s.WalletCount)), s.DBName)
+		fmt.Printf("Status: %s wallets in %s\n\n", formatNumber(int(s.WalletCount)), s.StorageInfo)
 		return
 	}
 
 	status := core.Success("READY")
 	walletInfo := fmt.Sprintf("%s wallets in %s",
-		formatNumber(int(s.WalletCount)), s.DBName)
+		formatNumber(int(s.WalletCount)), s.StorageInfo)
 
 	lastRun := core.Hint("no recent runs")
 	if s.LastRunRate > 0 {
@@ -55,8 +57,6 @@ func (s *StatusStrip) Render() {
 	fmt.Printf("\n   %s   ·   %s   ·   %s\n\n", status, walletInfo, lastRun)
 }
 
-// formatNumber formats an integer with thousand separators.
-// Uses the implementation from core package.
 func formatNumber(n int) string {
 	return core.FormatNumber(n)
 }

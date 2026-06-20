@@ -10,10 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-
 	"evmwalletbot/config"
+	"evmwalletbot/storage"
 	"evmwalletbot/wallet"
 )
 
@@ -53,8 +51,8 @@ func init() {
 // New approach: 1 log per batch = ~20K logs for 10M wallets (500x reduction).
 
 // GenerateWallets generates `totalWallets` EVM wallets in parallel, inserts them
-// into PostgreSQL using COPY protocol, and updates a single terminal line in-place.
-func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config, totalWallets int) error {
+// into the storage backend, and updates a single terminal line in-place.
+func GenerateWallets(ctx context.Context, store storage.Storage, cfg *config.Config, totalWallets int) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -184,11 +182,11 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 		if len(batch) >= cfg.BatchSize {
 			batchNum++
 
-			// Retry database insert with exponential backoff
+			// Retry storage insert with exponential backoff
 			var ids []int64
 			retryErr := WithRetry(ctx, DefaultRetryConfig(), func() error {
 				var err error
-				ids, err = insertWalletBatchCopy(pool, batch)
+				ids, err = store.SaveWallets(ctx, batch)
 				return err
 			})
 
@@ -196,7 +194,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 				close(progressDone)
 				cancel()     // Cancel context to stop workers
 				genWG.Wait() // Wait for all workers to finish
-				return fmt.Errorf("DB insert (batch %d) failed after retries: %w", batchNum, retryErr)
+				return fmt.Errorf("storage insert (batch %d) failed after retries: %w", batchNum, retryErr)
 			}
 			confirmedCount.Add(int64(len(ids)))
 			batchesCompleted.Add(1)
@@ -235,11 +233,11 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	if len(batch) > 0 {
 		batchNum++
 
-		// Retry database insert with exponential backoff
+		// Retry storage insert with exponential backoff
 		var ids []int64
 		retryErr := WithRetry(ctx, DefaultRetryConfig(), func() error {
 			var err error
-			ids, err = insertWalletBatchCopy(pool, batch)
+			ids, err = store.SaveWallets(ctx, batch)
 			return err
 		})
 
@@ -247,7 +245,7 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 			close(progressDone)
 			cancel()     // Cancel context to stop workers
 			genWG.Wait() // Wait for all workers to finish
-			return fmt.Errorf("DB insert (final batch) failed after retries: %w", retryErr)
+			return fmt.Errorf("storage insert (final batch) failed after retries: %w", retryErr)
 		}
 		confirmedCount.Add(int64(len(ids)))
 		batchesCompleted.Add(1)
@@ -306,102 +304,6 @@ func GenerateWallets(ctx context.Context, pool *pgxpool.Pool, cfg *config.Config
 	return nil
 }
 
-// insertWalletBatchCopy uses PostgreSQL COPY protocol for maximum throughput.
-// ponytail: COPY is 3-5× faster than multi-row INSERT for bulk data.
-// Uses UNLOGGED table for staging to skip WAL writes (20-30% faster).
-func insertWalletBatchCopy(pool *pgxpool.Pool, wallets []*wallet.Wallet) ([]int64, error) {
-	if len(wallets) == 0 {
-		return nil, nil
-	}
-
-	// ponytail: Add timeout for long-running COPY operations
-	ctx, cancel := context.WithTimeout(context.Background(), HealthCheckTimeout)
-	defer cancel()
-
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin tx: %w", err)
-	}
-
-	// Step 1: Create or truncate UNLOGGED staging table (faster than TEMP)
-	// ponytail: UNLOGGED skips WAL, reusable across batches
-	_, err = tx.Exec(ctx, `
-		CREATE UNLOGGED TABLE IF NOT EXISTS wallet_staging_reusable (
-			address     BYTEA,
-			private_key BYTEA
-		)
-	`)
-	if err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			log.Printf("[ERROR] Rollback failed after create staging table error: %v", rbErr)
-		}
-		return nil, fmt.Errorf("create staging table: %w", err)
-	}
-
-	// Truncate for reuse (faster than DROP/CREATE)
-	_, err = tx.Exec(ctx, `TRUNCATE wallet_staging_reusable`)
-	if err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			log.Printf("[ERROR] Rollback failed after truncate staging table error: %v", rbErr)
-		}
-		return nil, fmt.Errorf("truncate staging table: %w", err)
-	}
-
-	// Step 2: Use COPY protocol to bulk-load data into reusable staging table
-	_, err = tx.CopyFrom(
-		ctx,
-		pgx.Identifier{"wallet_staging_reusable"},
-		[]string{"address", "private_key"},
-		pgx.CopyFromSlice(len(wallets), func(i int) ([]interface{}, error) {
-			return []interface{}{wallets[i].Address, wallets[i].PrivateKey}, nil
-		}),
-	)
-	if err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			log.Printf("[ERROR] Rollback failed after copy data error: %v", rbErr)
-		}
-		return nil, fmt.Errorf("copy data: %w", err)
-	}
-
-	// Step 3: INSERT from staging into main table with RETURNING id
-	rows, err := tx.Query(ctx, `
-		INSERT INTO wallets (address, private_key)
-		SELECT address, private_key FROM wallet_staging_reusable
-		RETURNING id
-	`)
-	if err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			log.Printf("[ERROR] Rollback failed after insert from staging error: %v", rbErr)
-		}
-		return nil, fmt.Errorf("insert from staging: %w", err)
-	}
-	defer rows.Close()
-
-	ids := make([]int64, 0, len(wallets))
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			if rbErr := tx.Rollback(ctx); rbErr != nil {
-				log.Printf("[ERROR] Rollback failed after scan id error: %v", rbErr)
-			}
-			return nil, fmt.Errorf("scan id: %w", err)
-		}
-		ids = append(ids, id)
-	}
-	if err := rows.Err(); err != nil {
-		if rbErr := tx.Rollback(ctx); rbErr != nil {
-			log.Printf("[ERROR] Rollback failed after rows error: %v", rbErr)
-		}
-		return nil, err
-	}
-
-	// Commit transaction - no rollback after this point
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit tx: %w", err)
-	}
-
-	return ids, nil
-}
-
-// ponytail: Removed logCreationEvents - replaced with simple log.Printf for batch completion.
-// This eliminates the need for the events package dependency in the generator.
+// ponytail: Removed insertWalletBatchCopy - now handled by storage.Storage interface.
+// PostgreSQL-specific COPY protocol is implemented in storage/postgres package.
+// SQLite uses batch INSERT with transactions in storage/sqlite package.

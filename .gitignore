@@ -4,7 +4,14 @@
 # ── Build outputs ────────────────────────────────────────────────────────────
 evmwalletbot
 evmwalletbot.exe
+evmwalletbot-cross.exe
 /dist/
+/out/
+
+# ── Embedded SQLite data (auto-created at runtime) ───────────────────────────
+wallets.db
+wallets.db-shm
+wallets.db-wal
 
 # ── Go toolchain ─────────────────────────────────────────────────────────────
 vendor/
