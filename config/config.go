@@ -53,10 +53,13 @@ func Load() (*Config, error) {
 	// Best-effort .env load — no error if file is absent.
 	_ = godotenv.Load()
 
-	// Storage configuration
+	// Storage configuration — embedded SQLite by default, zero setup required.
 	storageType := getEnv("STORAGE", "sqlite")
+	if getEnv("DB_ENABLED", "false") == "true" {
+		storageType = "postgres"
+	}
 	if storageType != "sqlite" && storageType != "postgres" {
-		storageType = "sqlite" // Default to sqlite for invalid values
+		storageType = "sqlite"
 	}
 	dataDir := getEnv("WALLET_DATA_DIR", "") // Empty = auto-determined
 

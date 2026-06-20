@@ -63,6 +63,9 @@ type Stats struct {
 	ReservedWallets int64     // Wallets with status=2
 	OldestWallet    time.Time // Timestamp of oldest wallet
 	NewestWallet    time.Time // Timestamp of newest wallet
+	WalletsToday    int64     // Wallets created since midnight (local DB date)
+	TotalEvents     int64     // Event log entries (PostgreSQL only; 0 for SQLite)
+	DBSizeBytes     int64     // Total storage size in bytes
 }
 
 // PoolStats contains connection pool statistics.

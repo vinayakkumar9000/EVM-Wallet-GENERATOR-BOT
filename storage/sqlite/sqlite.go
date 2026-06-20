@@ -17,6 +17,24 @@ import (
 	"evmwalletbot/wallet"
 )
 
+func parseSQLiteTime(raw sql.NullString) (time.Time, error) {
+	if !raw.Valid || raw.String == "" {
+		return time.Time{}, nil
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, raw.String); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("parse sqlite time %q", raw.String)
+}
+
 // SQLiteStorage implements the storage.Storage interface using embedded SQLite.
 type SQLiteStorage struct {
 	db       *sql.DB
@@ -43,24 +61,20 @@ func NewSQLiteStorage(dataDir string) (*SQLiteStorage, error) {
 	// Database file path
 	dbPath := filepath.Join(dataDir, "wallets.db")
 
-	// Open SQLite database
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(1) // SQLite works best with single writer
+	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(0)
 
-	// Enable WAL mode for better concurrency
 	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enable WAL mode: %w", err)
 	}
 
-	// Enable foreign keys
 	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
@@ -156,7 +170,7 @@ func (s *SQLiteStorage) SaveWallets(ctx context.Context, wallets []*wallet.Walle
 
 	// Insert wallets and collect IDs
 	ids := make([]int64, 0, len(wallets))
-	now := time.Now()
+	now := time.Now().UTC().Format(time.RFC3339)
 
 	for _, w := range wallets {
 		result, err := stmt.ExecContext(ctx, w.Address, w.PrivateKey, now)
@@ -184,6 +198,7 @@ func (s *SQLiteStorage) SaveWallets(ctx context.Context, wallets []*wallet.Walle
 func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.WalletRecord, error) {
 	var record storage.WalletRecord
 	var metadataJSON sql.NullString
+	var createdAt sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, address, private_key, created_at, status, metadata
@@ -193,7 +208,7 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 		&record.ID,
 		&record.Address,
 		&record.PrivateKey,
-		&record.CreatedAt,
+		&createdAt,
 		&record.Status,
 		&metadataJSON,
 	)
@@ -203,6 +218,11 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query wallet: %w", err)
+	}
+
+	record.CreatedAt, err = parseSQLiteTime(createdAt)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse metadata JSON if present
@@ -219,6 +239,7 @@ func (s *SQLiteStorage) GetWalletByID(ctx context.Context, id int64) (*storage.W
 func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) (*storage.WalletRecord, error) {
 	var record storage.WalletRecord
 	var metadataJSON sql.NullString
+	var createdAt sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
 		SELECT id, address, private_key, created_at, status, metadata
@@ -228,7 +249,7 @@ func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) 
 		&record.ID,
 		&record.Address,
 		&record.PrivateKey,
-		&record.CreatedAt,
+		&createdAt,
 		&record.Status,
 		&metadataJSON,
 	)
@@ -238,6 +259,11 @@ func (s *SQLiteStorage) GetWalletByAddress(ctx context.Context, address []byte) 
 	}
 	if err != nil {
 		return nil, fmt.Errorf("query wallet: %w", err)
+	}
+
+	record.CreatedAt, err = parseSQLiteTime(createdAt)
+	if err != nil {
+		return nil, err
 	}
 
 	// Parse metadata JSON if present
@@ -264,18 +290,18 @@ func (s *SQLiteStorage) CountWallets(ctx context.Context) (int64, error) {
 func (s *SQLiteStorage) GetStats(ctx context.Context) (*storage.Stats, error) {
 	stats := &storage.Stats{}
 
-	// Get total count
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM wallets").Scan(&stats.TotalWallets)
 	if err != nil {
 		return nil, fmt.Errorf("count total wallets: %w", err)
 	}
 
-	// If no wallets, return early
 	if stats.TotalWallets == 0 {
+		if info, err := os.Stat(s.dataPath); err == nil {
+			stats.DBSizeBytes = info.Size()
+		}
 		return stats, nil
 	}
 
-	// Get counts by status
 	err = s.db.QueryRowContext(ctx, `
 		SELECT 
 			COUNT(CASE WHEN status = 0 THEN 1 END) as unused,
@@ -287,12 +313,31 @@ func (s *SQLiteStorage) GetStats(ctx context.Context) (*storage.Stats, error) {
 		return nil, fmt.Errorf("count by status: %w", err)
 	}
 
-	// Get oldest and newest timestamps
+	var oldestRaw, newestRaw sql.NullString
 	err = s.db.QueryRowContext(ctx, `
 		SELECT MIN(created_at), MAX(created_at) FROM wallets
-	`).Scan(&stats.OldestWallet, &stats.NewestWallet)
+	`).Scan(&oldestRaw, &newestRaw)
 	if err != nil {
 		return nil, fmt.Errorf("get timestamps: %w", err)
+	}
+	stats.OldestWallet, err = parseSQLiteTime(oldestRaw)
+	if err != nil {
+		return nil, err
+	}
+	stats.NewestWallet, err = parseSQLiteTime(newestRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.db.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM wallets WHERE date(created_at) = date('now', 'localtime')
+	`).Scan(&stats.WalletsToday)
+	if err != nil {
+		return nil, fmt.Errorf("count today's wallets: %w", err)
+	}
+
+	if info, err := os.Stat(s.dataPath); err == nil {
+		stats.DBSizeBytes = info.Size()
 	}
 
 	return stats, nil

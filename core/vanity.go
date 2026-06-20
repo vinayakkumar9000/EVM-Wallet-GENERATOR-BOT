@@ -175,7 +175,7 @@ func GenerateVanityWallets(ctx context.Context, store storage.Storage, cfg *conf
 
 	// Save matches to database
 	if len(matches) > 0 {
-	if err := saveVanityMatches(ctx, store, matches); err != nil {
+		if err := saveVanityMatches(ctx, store, matches); err != nil {
 			return fmt.Errorf("failed to save matches: %w", err)
 		}
 	}

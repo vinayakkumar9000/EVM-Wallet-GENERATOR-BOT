@@ -9,6 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"evmwalletbot/storage"
+	"evmwalletbot/storage/postgres"
 )
 
 // HealthMetrics represents health statistics for a database table.
@@ -23,8 +26,55 @@ type HealthMetrics struct {
 	BloatPercent   float64
 }
 
+// RunHealthCheck collects metrics, displays them, and records to database when supported.
+func RunHealthCheck(ctx context.Context, store storage.Storage) error {
+	if err := store.HealthCheck(ctx); err != nil {
+		return fmt.Errorf("storage health check: %w", err)
+	}
+
+	pgStore, ok := store.(*postgres.PostgresStorage)
+	if !ok {
+		stats, err := store.GetStats(ctx)
+		if err != nil {
+			return fmt.Errorf("load stats: %w", err)
+		}
+		fmt.Printf(`
+  ┌──────────────────────────────────────────────────────┐
+  │                STORAGE HEALTH                        │
+  ├──────────────────────────────────────────────────────┤
+  │  Backend          : %-33s │
+  │  Status           : %-33s │
+  │  Total wallets    : %-33d │
+  │  Storage size     : %-33s │
+  └──────────────────────────────────────────────────────┘
+`,
+			store.StorageType(),
+			"healthy",
+			stats.TotalWallets,
+			FormatBytes(stats.DBSizeBytes),
+		)
+		log.Println("[INFO] Health check complete")
+		return nil
+	}
+
+	log.Println("[INFO] Collecting database health metrics...")
+	metrics, err := CollectHealthMetrics(ctx, pgStore.Pool())
+	if err != nil {
+		return fmt.Errorf("collect metrics: %w", err)
+	}
+
+	PrintHealthMetrics(metrics)
+
+	log.Println("[INFO] Recording metrics to database_health table...")
+	if err := RecordHealthMetrics(ctx, pgStore.Pool(), metrics); err != nil {
+		return fmt.Errorf("record metrics: %w", err)
+	}
+
+	log.Println("[INFO] Health check complete")
+	return nil
+}
+
 // CollectHealthMetrics queries PostgreSQL system catalogs for table health data.
-// ponytail: Uses pg_stat_user_tables (stdlib PostgreSQL views, no new dependencies).
 func CollectHealthMetrics(ctx context.Context, pool *pgxpool.Pool) ([]HealthMetrics, error) {
 	query := `
 		SELECT 
@@ -62,7 +112,6 @@ func CollectHealthMetrics(ctx context.Context, pool *pgxpool.Pool) ([]HealthMetr
 			return nil, fmt.Errorf("scan health metrics: %w", err)
 		}
 
-		// Calculate bloat percentage
 		if m.LiveTuples > 0 {
 			m.BloatPercent = float64(m.DeadTuples) / float64(m.LiveTuples+m.DeadTuples) * 100
 		}
@@ -78,7 +127,6 @@ func CollectHealthMetrics(ctx context.Context, pool *pgxpool.Pool) ([]HealthMetr
 }
 
 // RecordHealthMetrics saves health metrics to database_health table for historical tracking.
-// ponytail: Uses pgx.Batch for bulk insert instead of one-at-a-time
 func RecordHealthMetrics(ctx context.Context, pool *pgxpool.Pool, metrics []HealthMetrics) error {
 	if len(metrics) == 0 {
 		return nil
@@ -101,8 +149,7 @@ func RecordHealthMetrics(ctx context.Context, pool *pgxpool.Pool, metrics []Heal
 	defer br.Close()
 
 	for i := 0; i < len(metrics); i++ {
-		_, err := br.Exec()
-		if err != nil {
+		if _, err := br.Exec(); err != nil {
 			return fmt.Errorf("record health metrics batch: %w", err)
 		}
 	}
@@ -130,17 +177,12 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 	for _, m := range metrics {
 		fmt.Printf("  ║  Table: %-68s ║\n", m.TableName)
 		fmt.Println(line)
-
-		// Size information
-		fmt.Printf("  ║    Total Size      : %-54s ║\n", formatBytes(m.TotalSize))
-		fmt.Printf("  ║    Index Size      : %-54s ║\n", formatBytes(m.IndexSize))
-		fmt.Printf("  ║    Data Size       : %-54s ║\n", formatBytes(m.TotalSize-m.IndexSize))
-
-		// Tuple information
+		fmt.Printf("  ║    Total Size      : %-54s ║\n", FormatBytes(m.TotalSize))
+		fmt.Printf("  ║    Index Size      : %-54s ║\n", FormatBytes(m.IndexSize))
+		fmt.Printf("  ║    Data Size       : %-54s ║\n", FormatBytes(m.TotalSize-m.IndexSize))
 		fmt.Printf("  ║    Live Tuples     : %-54d ║\n", m.LiveTuples)
 		fmt.Printf("  ║    Dead Tuples     : %-54d ║\n", m.DeadTuples)
 
-		// Bloat warning
 		bloatStatus := fmt.Sprintf("%.1f%%", m.BloatPercent)
 		if m.BloatPercent > 20 {
 			bloatStatus += " ⚠️  HIGH - Consider VACUUM"
@@ -151,7 +193,6 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 		}
 		fmt.Printf("  ║    Bloat           : %-54s ║\n", bloatStatus)
 
-		// Vacuum history
 		if m.LastVacuum != nil {
 			fmt.Printf("  ║    Last VACUUM     : %-54s ║\n", m.LastVacuum.Format("2006-01-02 15:04:05"))
 		} else {
@@ -170,7 +211,6 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 	fmt.Println(bot)
 	fmt.Println()
 
-	// Summary warnings
 	needsVacuum := false
 	for _, m := range metrics {
 		if m.BloatPercent > 20 {
@@ -183,24 +223,4 @@ func PrintHealthMetrics(metrics []HealthMetrics) {
 		log.Println("[WARN] Some tables have high bloat (>20%). Consider running VACUUM ANALYZE.")
 		log.Println("[INFO] To vacuum: psql -d <database> -c 'VACUUM ANALYZE;'")
 	}
-}
-
-// RunHealthCheck collects metrics, displays them, and records to database.
-func RunHealthCheck(ctx context.Context, pool *pgxpool.Pool) error {
-	log.Println("[INFO] Collecting database health metrics...")
-
-	metrics, err := CollectHealthMetrics(ctx, pool)
-	if err != nil {
-		return fmt.Errorf("collect metrics: %w", err)
-	}
-
-	PrintHealthMetrics(metrics)
-
-	log.Println("[INFO] Recording metrics to database_health table...")
-	if err := RecordHealthMetrics(ctx, pool, metrics); err != nil {
-		return fmt.Errorf("record metrics: %w", err)
-	}
-
-	log.Println("[INFO] Health check complete")
-	return nil
 }

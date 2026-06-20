@@ -153,30 +153,39 @@ func (p *PostgresStorage) CountWallets(ctx context.Context) (int64, error) {
 func (p *PostgresStorage) GetStats(ctx context.Context) (*storage.Stats, error) {
 	stats := &storage.Stats{}
 
-	// Get total count
-	err := p.pool.QueryRow(ctx, "SELECT COUNT(*) FROM wallets").Scan(&stats.TotalWallets)
+	err := p.pool.QueryRow(ctx, `
+		SELECT 
+			total_wallets,
+			unused_wallets,
+			used_wallets,
+			total_events
+		FROM system_stats
+		WHERE id = 1
+	`).Scan(&stats.TotalWallets, &stats.UnusedWallets, &stats.UsedWallets, &stats.TotalEvents)
 	if err != nil {
-		return nil, fmt.Errorf("count total wallets: %w", err)
+		return nil, fmt.Errorf("query cached stats: %w", err)
 	}
 
-	// If no wallets, return early
 	if stats.TotalWallets == 0 {
+		err = p.pool.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&stats.DBSizeBytes)
+		if err != nil {
+			return nil, fmt.Errorf("query db size: %w", err)
+		}
 		return stats, nil
 	}
 
-	// Get counts by status
 	err = p.pool.QueryRow(ctx, `
-		SELECT 
-			COUNT(*) FILTER (WHERE status = 0) as unused,
-			COUNT(*) FILTER (WHERE status = 1) as used,
-			COUNT(*) FILTER (WHERE status = 2) as reserved
-		FROM wallets
-	`).Scan(&stats.UnusedWallets, &stats.UsedWallets, &stats.ReservedWallets)
+		SELECT COUNT(*) FROM wallets WHERE created_at >= CURRENT_DATE
+	`).Scan(&stats.WalletsToday)
 	if err != nil {
-		return nil, fmt.Errorf("count by status: %w", err)
+		return nil, fmt.Errorf("count today's wallets: %w", err)
 	}
 
-	// Get oldest and newest timestamps
+	err = p.pool.QueryRow(ctx, `SELECT pg_database_size(current_database())`).Scan(&stats.DBSizeBytes)
+	if err != nil {
+		return nil, fmt.Errorf("query db size: %w", err)
+	}
+
 	err = p.pool.QueryRow(ctx, `
 		SELECT MIN(created_at), MAX(created_at) FROM wallets
 	`).Scan(&stats.OldestWallet, &stats.NewestWallet)
