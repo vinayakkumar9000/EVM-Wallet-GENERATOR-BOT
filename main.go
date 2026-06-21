@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"evmwalletbot/internal"
+	"evmwalletbot/data/src"
 )
 
 const (
@@ -32,7 +32,7 @@ func main() {
 
 	// Handle --verify subcommand (optional, off-by-default verification)
 	if *verifyFile != "" {
-		if err := internal.VerifyExportedFile(*verifyFile); err != nil {
+		if err := src.VerifyExportedFile(*verifyFile); err != nil {
 			fmt.Fprintf(os.Stderr, "Verification failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -75,7 +75,7 @@ func main() {
 	log.SetFlags(0)
 	log.SetOutput(os.Stdout)
 
-	cfg, err := internal.LoadConfig()
+	cfg, err := src.LoadConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Config: %v\n", err)
 		os.Exit(1)
@@ -118,7 +118,7 @@ func main() {
 		}
 	}()
 
-	store, err := internal.NewStorage(ctx, cfg)
+	store, err := src.NewStorage(ctx, cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Storage setup failed: %v\n", err)
 		os.Exit(1)
@@ -141,15 +141,15 @@ func main() {
 		startPoolMonitor(ctx, store, cfg)
 	}
 
-	s, err := internal.GetStats(ctx, store)
+	s, err := src.GetStats(ctx, store)
 	if err == nil && s.TotalWallets > 0 {
 		log.Printf("[INFO] Existing data found — %d wallets loaded\n", s.TotalWallets)
-		internal.PrintStats(s)
+		src.PrintStats(s)
 	}
 
 	if *generateCount > 0 {
 		log.Printf("[INFO] Non-interactive mode: generating %d wallets", *generateCount)
-		if err := internal.GenerateWallets(ctx, store, cfg, *generateCount); err != nil {
+		if err := src.GenerateWallets(ctx, store, cfg, *generateCount); err != nil {
 			fmt.Fprintf(os.Stderr, "[ERROR] Generation failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -157,10 +157,10 @@ func main() {
 		os.Exit(0)
 	}
 
-	internal.Run(ctx, store, cfg)
+	src.Run(ctx, store, cfg)
 }
 
-func startPoolMonitor(ctx context.Context, store internal.Storage, cfg *internal.Config) {
+func startPoolMonitor(ctx context.Context, store src.Storage, cfg *src.Config) {
 	go func() {
 		ticker := time.NewTicker(time.Duration(cfg.PoolMonitorInterval) * time.Second)
 		defer ticker.Stop()
