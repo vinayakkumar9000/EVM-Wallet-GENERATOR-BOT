@@ -20,11 +20,11 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.23'
+          go-version: '1.25'
           cache: true
 
-      - name: Run go mod tidy
-        run: go mod tidy
+      - name: Verify go.sum is tidy
+        run: go mod tidy -diff
 
       - name: Verify dependencies
         run: go mod verify
