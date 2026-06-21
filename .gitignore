@@ -23,6 +23,9 @@ dist/
 release/
 bin/
 
+# GoReleaser
+.goreleaser/
+
 # IDE
 .vscode/
 .idea/

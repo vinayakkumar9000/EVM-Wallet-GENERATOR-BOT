@@ -171,6 +171,35 @@ This turns "what should `WORKERS` be on my machine?" from a guess into a measure
 
 ## 💻 Installation Guide
 
+### 📦 Download Pre-built Binaries (Recommended)
+
+Download the latest release for your platform from the [GitHub Releases](https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT/releases) page:
+
+- **Windows**: `evmwalletbot-vX.X.X-windows-amd64.zip` or `evmwalletbot-vX.X.X-windows-arm64.zip`
+- **Linux**: `evmwalletbot-vX.X.X-linux-amd64.tar.gz` or `evmwalletbot-vX.X.X-linux-arm64.tar.gz`
+- **macOS**: `evmwalletbot-vX.X.X-darwin-amd64.tar.gz` or `evmwalletbot-vX.X.X-darwin-arm64.tar.gz`
+
+Each archive contains:
+- The `evmwalletbot` executable
+- `README.md`
+- `LICENSE`
+
+**Verify your download** using the `checksums.txt` file included in the release.
+
+After extracting, check the version:
+
+```bash
+# Windows
+.\evmwalletbot.exe -version
+
+# Linux/macOS
+./evmwalletbot -version
+```
+
+### 🔨 Build From Source
+
+
+
 ### Prerequisites
 
 - **Go 1.25+** (this is a pure-Go module — no CGO toolchain required, even for SQLite)

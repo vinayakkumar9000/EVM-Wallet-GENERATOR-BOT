@@ -40,7 +40,10 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Println("evmwalletbot v1.0.0")
+		fmt.Printf("EVM Wallet Generator\n")
+		fmt.Printf("Version: %s\n", src.Version)
+		fmt.Printf("Commit: %s\n", src.GitCommit)
+		fmt.Printf("Build Date: %s\n", src.BuildDate)
 		os.Exit(0)
 	}
 

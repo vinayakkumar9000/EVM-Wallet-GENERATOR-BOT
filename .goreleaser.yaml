@@ -1,0 +1,82 @@
+# GoReleaser configuration for EVM Wallet Generator
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: evmwalletbot
+    main: ./main.go
+    binary: evmwalletbot
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X evmwalletbot/internal.Version={{.Version}}
+      - -X evmwalletbot/internal.GitCommit={{.Commit}}
+      - -X evmwalletbot/internal.BuildDate={{.Date}}
+
+archives:
+  - id: default
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+    name_template: >-
+      {{ .ProjectName }}-
+      {{- .Version }}-
+      {{- .Os }}-
+      {{- .Arch }}
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug Fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: vinayakkumar9000
+    name: EVM-Wallet-GENERATOR-BOT
+  draft: false
+  prerelease: auto
+  mode: replace
+  name_template: "{{.ProjectName}} {{.Version}}"
+  header: |
+    ## EVM Wallet Generator {{.Version}}
+    
+    ### Installation
+    
+    Download the appropriate binary for your platform below.
+    
+    ### What's Changed
