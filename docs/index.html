@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EVM Wallet Generator — bulk wallet generation, Go-native</title>
+<meta name="description" content="A concurrent Go toolkit for generating EVM-compatible wallets at scale: vanity mining, HD derivation, SQLite/Postgres storage, six export formats.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔐</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav__inner">
+    <a class="nav__brand" href="#top">
+      <span class="nav__mark">0x</span>EVM&nbsp;Wallet&nbsp;Generator
+    </a>
+    <nav class="nav__links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#security">Security</a>
+      <a href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT" class="nav__cta">GitHub →</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap hero__grid">
+      <div class="hero__copy">
+        <p class="eyebrow">Go · terminal toolkit · public domain</p>
+        <h1>Generate EVM wallets<br>faster than you can read them.</h1>
+        <p class="hero__sub">
+          A concurrent generation engine, a resumable vanity-address miner, and full
+          BIP‑39/BIP‑44 HD derivation — wrapped in one dependency-light Go binary with
+          zero-setup SQLite storage and an optional Postgres upgrade path.
+        </p>
+        <div class="hero__ctas">
+          <a class="btn btn--primary" href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT/releases">Get the binary</a>
+          <a class="btn btn--ghost" href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT">View source</a>
+        </div>
+      </div>
+
+      <div class="hero__feed" aria-hidden="true">
+        <div class="feed__window">
+          <div class="feed__track">
+            <!-- list duplicated once in CSS-adjacent markup for a seamless loop -->
+            <div class="feed__row"><span class="addr">0x7F3a…9E2c</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x4B91…11Da</span><span class="tag tag--gold">sqlite</span></div>
+            <div class="feed__row"><span class="addr">0xD20e…77Ab</span><span class="tag tag--teal">vanity:0xCAFE…</span></div>
+            <div class="feed__row"><span class="addr">0x1C6f…3304</span><span class="tag tag--gold">keystore</span></div>
+            <div class="feed__row"><span class="addr">0xA88d…F051</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x0E72…BC19</span><span class="tag tag--gold">postgres</span></div>
+            <div class="feed__row"><span class="addr">0x9F4c…2287</span><span class="tag tag--teal">hd:m/44'/60'</span></div>
+            <div class="feed__row"><span class="addr">0x5D1a…E930</span><span class="tag tag--gold">csv</span></div>
+            <div class="feed__row"><span class="addr">0xB76e…04F8</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x33Ca…9D6b</span><span class="tag tag--gold">json</span></div>
+            <div class="feed__row"><span class="addr">0xE901…5A4c</span><span class="tag tag--teal">vanity:0xdead…</span></div>
+            <div class="feed__row"><span class="addr">0x2F88…C612</span><span class="tag tag--gold">keystore</span></div>
+            <!-- duplicate for loop -->
+            <div class="feed__row"><span class="addr">0x7F3a…9E2c</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x4B91…11Da</span><span class="tag tag--gold">sqlite</span></div>
+            <div class="feed__row"><span class="addr">0xD20e…77Ab</span><span class="tag tag--teal">vanity:0xCAFE…</span></div>
+            <div class="feed__row"><span class="addr">0x1C6f…3304</span><span class="tag tag--gold">keystore</span></div>
+            <div class="feed__row"><span class="addr">0xA88d…F051</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x0E72…BC19</span><span class="tag tag--gold">postgres</span></div>
+            <div class="feed__row"><span class="addr">0x9F4c…2287</span><span class="tag tag--teal">hd:m/44'/60'</span></div>
+            <div class="feed__row"><span class="addr">0x5D1a…E930</span><span class="tag tag--gold">csv</span></div>
+            <div class="feed__row"><span class="addr">0xB76e…04F8</span><span class="tag tag--teal">address</span></div>
+            <div class="feed__row"><span class="addr">0x33Ca…9D6b</span><span class="tag tag--gold">json</span></div>
+            <div class="feed__row"><span class="addr">0xE901…5A4c</span><span class="tag tag--teal">vanity:0xdead…</span></div>
+            <div class="feed__row"><span class="addr">0x2F88…C612</span><span class="tag tag--gold">keystore</span></div>
+          </div>
+        </div>
+        <p class="feed__caption">illustrative output — not real key material</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="wrap stats__grid">
+      <div class="stat"><span class="stat__num">1,000s</span><span class="stat__label">keypairs / sec</span></div>
+      <div class="stat"><span class="stat__num">BIP‑39/44</span><span class="stat__label">HD derivation</span></div>
+      <div class="stat"><span class="stat__num">SQLite + PG</span><span class="stat__label">storage backends</span></div>
+      <div class="stat"><span class="stat__num">6</span><span class="stat__label">export formats</span></div>
+    </div>
+  </section>
+
+  <section class="why">
+    <div class="wrap why__grid">
+      <h2>Why this exists</h2>
+      <div class="why__cols">
+        <p>
+          Generating an EVM-compatible keypair is a one-line call into any crypto library.
+          Doing it <em>at scale, safely, and with somewhere durable to put the results</em>
+          is a different problem — most scripts generate one wallet at a time with no
+          concurrency model, and most tools leave you with a CSV you're scared to lose.
+        </p>
+        <p>
+          This is a single Go binary that does the unglamorous parts properly: a
+          worker-pool engine that reuses memory instead of allocating per wallet, a
+          vanity miner that can resume a search instead of restarting it, and a storage
+          layer that starts at zero config and scales to Postgres without a rewrite.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="wrap">
+      <h2>What it does</h2>
+      <div class="feature-grid">
+
+        <article class="card">
+          <span class="card__mark">engine</span>
+          <h3>Concurrent generation</h3>
+          <p>A worker-pool generator with <code>sync.Pool</code> reuse, built to sustain
+          thousands of keypairs per second rather than thousands per minute.</p>
+        </article>
+
+        <article class="card">
+          <span class="card__mark">mining</span>
+          <h3>Resumable vanity search</h3>
+          <p>Difficulty-aware probability math, OR-pattern matching, and search state
+          that survives a restart instead of starting from zero.</p>
+        </article>
+
+        <article class="card">
+          <span class="card__mark">derivation</span>
+          <h3>HD wallets</h3>
+          <p>Full BIP‑39 / BIP‑44 support — 12 or 24-word mnemonics, optional
+          passphrase, standard derivation paths.</p>
+        </article>
+
+        <article class="card">
+          <span class="card__mark">storage</span>
+          <h3>SQLite, then Postgres</h3>
+          <p>Zero-setup embedded storage by default. Switch on PostgreSQL when you need
+          it, with connection-pool and database health monitoring built in.</p>
+        </article>
+
+        <article class="card">
+          <span class="card__mark">export</span>
+          <h3>Six export formats</h3>
+          <p>Plaintext, CSV, JSON, and an encrypted Web3 Secret Storage keystore via
+          <code>go-ethereum</code>'s standard implementation.</p>
+        </article>
+
+        <article class="card">
+          <span class="card__mark">interface</span>
+          <h3>TUI and CLI, both first-class</h3>
+          <p>A full interactive terminal UI for exploring it by hand, and
+          non-interactive flags for scripting it into a pipeline.</p>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+  <section class="install" id="install">
+    <div class="wrap install__grid">
+      <div>
+        <h2>Get running</h2>
+        <p>Grab a prebuilt binary for Linux, macOS, or Windows from the releases page,
+        or build it yourself with Go installed.</p>
+        <div class="install__links">
+          <a class="btn btn--primary" href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT/releases">Latest release</a>
+          <a class="btn btn--ghost" href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT#-installation-guide">Full install guide</a>
+        </div>
+      </div>
+      <div class="terminal">
+        <div class="terminal__bar"><span></span><span></span><span></span></div>
+        <pre class="terminal__body"><code><span class="t-muted"># build from source</span>
+<span class="t-prompt">$</span> git clone https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT.git
+<span class="t-prompt">$</span> cd EVM-Wallet-GENERATOR-BOT
+<span class="t-prompt">$</span> go build ./...
+
+<span class="t-muted"># bulk generate, export to CSV</span>
+<span class="t-prompt">$</span> ./evmwalletbot -count 10000 -export csv
+
+<span class="t-muted"># resumable vanity search</span>
+<span class="t-prompt">$</span> ./evmwalletbot -vanity 0xCAFE -resume</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="security" id="security">
+    <div class="wrap">
+      <div class="security__box">
+        <h2>Before you run this somewhere that matters</h2>
+        <p>
+          This tool generates real, valid private keys. Treat every output file and
+          database as sensitive material — plaintext storage is an intentional design
+          choice, not an oversight, and it's on you to encrypt at rest, keep machines
+          offline, or switch to the encrypted keystore export when it matters.
+        </p>
+        <a class="security__link" href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT#-security-considerations">Read the full security considerations →</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <p>Released into the public domain under <a href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT/blob/main/LICENSE">the Unlicense</a>. Built with <a href="https://github.com/ethereum/go-ethereum">go-ethereum</a>.</p>
+    <a href="https://github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT">github.com/vinayakkumar9000/EVM-Wallet-GENERATOR-BOT</a>
+  </div>
+</footer>
+
+</body>
+</html>
