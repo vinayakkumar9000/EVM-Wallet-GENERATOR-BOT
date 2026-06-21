@@ -1,0 +1,50 @@
+# Environment
+.env
+
+# Build output
+*.exe
+*.exe~
+*.out
+*.dll
+*.so
+*.dylib
+
+# Databases
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Build folders
+build/
+dist/
+release/
+bin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Cache
+.bob/
+
+# Test coverage
+*.out
+coverage.html
+coverage.txt
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
