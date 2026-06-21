@@ -21,9 +21,9 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X evmwalletbot/internal.Version={{.Version}}
-      - -X evmwalletbot/internal.GitCommit={{.Commit}}
-      - -X evmwalletbot/internal.BuildDate={{.Date}}
+      - -X evmwalletbot/internal/src.Version={{.Version}}
+      - -X evmwalletbot/internal/src.GitCommit={{.Commit}}
+      - -X evmwalletbot/internal/src.BuildDate={{.Date}}
 
 archives:
   - id: default
