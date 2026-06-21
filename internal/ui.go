@@ -436,7 +436,6 @@ func printRow(label, value string) {
 	fmt.Printf("  ║  %-26s : %-20s ║\n", label, value)
 }
 
-
 // ============================================================================
 // Interactive CLI Menu
 // ============================================================================
@@ -713,7 +712,7 @@ func handleVanityMenuNew(ctx context.Context, store Storage, cfg *Config, reader
 	fmt.Println()
 	fmt.Println(Highlight("  Preview of matching address:"))
 	previewAddr := generatePreviewAddress(prefix, suffix)
-	fmt.Printf("  %s\n", Info(previewAddr))
+	fmt.Printf("  %s\n", Info("%s", previewAddr))
 	fmt.Println()
 
 	// Step 3: Case sensitivity
@@ -763,7 +762,7 @@ func handleVanityMenuNew(ctx context.Context, store Storage, cfg *Config, reader
 	fmt.Println(Hint("  • How many wallets with this pattern do you want?"))
 	fmt.Println(Hint("  • If more than 5, only first 5 will be shown in terminal"))
 	fmt.Println(Hint("  • All wallets will be saved to database"))
-	
+
 	var count int
 	for {
 		countVal, ok := promptPositiveInt(reader, "\n  Number of wallets to generate: ")
@@ -782,7 +781,7 @@ func handleVanityMenuNew(ctx context.Context, store Storage, cfg *Config, reader
 	fmt.Println()
 	fmt.Println(Highlight("  ─────────────────────────────────────────────────────────────"))
 	fmt.Println(Success("  Ready to generate!"))
-	fmt.Printf("  Pattern: 0x%s...%s (%s)\n", prefix, suffix, 
+	fmt.Printf("  Pattern: 0x%s...%s (%s)\n", prefix, suffix,
 		map[bool]string{true: "case-sensitive", false: "case-insensitive"}[checksum])
 	fmt.Printf("  Target: %d wallet(s)\n", count)
 	fmt.Println(Highlight("  ─────────────────────────────────────────────────────────────"))
@@ -1951,21 +1950,20 @@ func showSettingsHelp() {
 func generatePreviewAddress(prefix, suffix string) string {
 	// Ethereum address is 40 hex characters (20 bytes)
 	const addrLen = 40
-	
+
 	prefixLen := len(prefix)
 	suffixLen := len(suffix)
 	middleLen := addrLen - prefixLen - suffixLen
-	
+
 	if middleLen < 0 {
 		middleLen = 0
 	}
-	
+
 	// Generate middle part with 'x' characters
 	middle := strings.Repeat("x", middleLen)
-	
+
 	return fmt.Sprintf("0x%s%s%s", prefix, middle, suffix)
 }
-
 
 // ============================================================================
 // Vanity Pattern Parsing

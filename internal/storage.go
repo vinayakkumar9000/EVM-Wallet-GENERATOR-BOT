@@ -163,7 +163,6 @@ func StorageLabel(store Storage, cfg *Config) string {
 	}
 }
 
-
 // ============================================================================
 // Database Connection and Pool Management
 // ============================================================================
@@ -1123,7 +1122,6 @@ func DeserializePatterns(data string, patterns interface{}) error {
 	return nil
 }
 
-
 // ============================================================================
 // PostgreSQL Storage Implementation
 // ============================================================================
@@ -1343,4 +1341,3 @@ func (p *PostgresStorage) StorageType() string {
 func (p *PostgresStorage) Pool() *pgxpool.Pool {
 	return p.pool
 }
-

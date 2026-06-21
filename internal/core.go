@@ -1094,7 +1094,6 @@ func VerifyExportedWallet(address, privateKey string) (bool, error) {
 	return derivedAddress == expectedAddress, nil
 }
 
-
 // ============================================================================
 // Constants
 // ============================================================================
@@ -1989,11 +1988,11 @@ func displayMatch(match *VanityMatch, current, target int) {
 			if padding < 0 {
 				padding = 0
 			}
-			fmt.Printf("  ║ %s%s║\n", Hint(patternInfo), strings.Repeat(" ", padding))
+			fmt.Printf("  ║ %s%s║\n", Hint("%s", patternInfo), strings.Repeat(" ", padding))
 		}
 		fmt.Printf("  ╟───────────────────────────────────────────────────────────────╢\n")
-		fmt.Printf("  ║ Address:     %-48s║\n", Info(addr))
-		fmt.Printf("  ║ Private Key: %-48s║\n", Hint(privKey))
+		fmt.Printf("  ║ Address:     %-48s║\n", Info("%s", addr))
+		fmt.Printf("  ║ Private Key: %-48s║\n", Hint("%s", privKey))
 		fmt.Printf("  ╟───────────────────────────────────────────────────────────────╢\n")
 		fmt.Printf("  ║ Attempts: %-15s  Elapsed: %-23s║\n",
 			FormatNumber(int(match.Attempts)),
@@ -2007,7 +2006,7 @@ func displayMatch(match *VanityMatch, current, target int) {
 		}
 	} else if current == 6 {
 		// Show progress indicator for remaining matches
-		fmt.Printf("  %s Finding remaining matches... (%d/%d found)\n", 
+		fmt.Printf("  %s Finding remaining matches... (%d/%d found)\n",
 			Info("ℹ"), current, target)
 	}
 }
@@ -2149,8 +2148,6 @@ func displayVanitySummary(stats *VanityStats, matches []*VanityMatch, target int
 	fmt.Println(Highlight("  ═══════════════════════════════════════════════════════════════"))
 	fmt.Println()
 }
-
-
 
 // saveVanitySearchProgress saves current search progress to database
 func saveVanitySearchProgress(ctx context.Context, store *SQLiteStorage, stats *VanityStats, vanity VanityConfig, resumeFrom *VanitySearchState) error {
@@ -2492,8 +2489,6 @@ func WithRetry(ctx context.Context, cfg RetryConfig, fn RetryableFunc) error {
 	return fmt.Errorf("operation failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
 
-
-
 // VerifyExportedFile re-derives addresses from an exported key file and reports pass/fail.
 // This is an optional, off-by-default verification tool that runs outside normal generation.
 func VerifyExportedFile(filePath string) error {
@@ -2700,4 +2695,3 @@ func readLines(filePath string) ([]string, error) {
 
 	return lines, nil
 }
-
